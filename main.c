@@ -2,7 +2,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include <sys/time.h>
 
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
@@ -267,18 +266,6 @@ void draw_current_time(void) {
 	XFlush(dpy);
 }
 
-static void check_and_update_time(Display *dpy) {
-	(void)dpy;
-	static struct timeval last_update = {0, 0};
-	struct timeval now;
-
-	gettimeofday(&now, NULL);
-	if (now.tv_sec > last_update.tv_sec || (now.tv_sec == last_update.tv_sec && now.tv_usec - last_update.tv_usec >= 1000000)) {
-		draw_current_time();
-		last_update = now;
-	}
-}
-
 int main(void) {
 	set_log_level(get_log_level_from_env());
 
@@ -362,148 +349,136 @@ int main(void) {
 	draw_current_time();
 
 	for(;;) {
-		check_and_update_time(dpy);
-		fd_set fds;
-		struct timeval tv;
-		int x11_fd = ConnectionNumber(dpy);
-		FD_ZERO(&fds);
-		FD_SET(x11_fd, &fds);
-		tv.tv_sec = 0;
-		tv.tv_usec = 100000;
+		XNextEvent(dpy, &ev);
 
-		if (select(x11_fd + 1, &fds, NULL, NULL, &tv) > 0) {
-			XNextEvent(dpy, &ev);
+		switch (ev.type) {
+			case Expose:
+				if (ev.xexpose.window == root) {
+					draw_desktop_number();
+				}
+				break;
 
-			switch (ev.type) {
-				case Expose:
-					if (ev.xexpose.window == root) {
-						draw_desktop_number();
+			case MapRequest:
+				{
+					Window window = ev.xmaprequest.window;
+					XSetWindowBorderWidth(dpy, window, BORDER_SIZE);
+					XSetWindowBorder(dpy, window, inactive_border_color);
+
+					XWindowAttributes check_attr;
+					if (XGetWindowAttributes(dpy, window, &check_attr)) {
+						XSelectInput(dpy, window, EnterWindowMask | LeaveWindowMask);
 					}
-					break;
 
-				case MapRequest:
-					{
-						Window window = ev.xmaprequest.window;
-						XSetWindowBorderWidth(dpy, window, BORDER_SIZE);
-						XSetWindowBorder(dpy, window, inactive_border_color);
+					XMapWindow(dpy, window);
+					log_message(stdout, LOG_DEBUG, "Window 0x%lx mapped", window);
+
+					add_to_client_list(window);
+					set_window_desktop(window, current_desktop);
+				} break;
+
+			case DestroyNotify:
+				{
+					if (ev.xdestroywindow.window == active_window) {
+						update_borders(None);
+						log_message(stdout, LOG_DEBUG, "Window 0x%lx destroyed", ev.xdestroywindow.window);
+					}
+
+					remove_from_client_list(ev.xdestroywindow.window);
+				} break;
+
+			case UnmapNotify:
+				{
+					log_message(stdout, LOG_DEBUG, "Window 0x%lx unmapped", ev.xunmap.window);
+				} break;
 
 
-						XWindowAttributes check_attr;
-						if (XGetWindowAttributes(dpy, window, &check_attr)) {
-							XSelectInput(dpy, window, EnterWindowMask | LeaveWindowMask);
+			case FocusIn:
+				{
+					if (ev.xfocus.window != root) {
+						update_borders(ev.xfocus.window);
+					}
+				}
+				break;
+
+			case FocusOut:
+				{
+					if (ev.xfocus.window == active_window) {
+						update_borders(None);
+					}
+				} break;
+
+			case EnterNotify:
+				{
+					Window entered_window = ev.xcrossing.window;
+					if (entered_window != root && ev.xcrossing.mode == NotifyNormal) {
+						if (entered_window != None && entered_window != active_window) {
+							XRaiseWindow(dpy, entered_window);
+							XSetInputFocus(dpy, entered_window, RevertToPointerRoot, CurrentTime);
+							update_borders(entered_window);
 						}
 
-						XMapWindow(dpy, window);
-						log_message(stdout, LOG_DEBUG, "Window 0x%lx mapped", window);
+					}
+				} break;
 
-						add_to_client_list(window);
-						set_window_desktop(window, current_desktop);
-					} break;
-
-				case DestroyNotify:
-					{
-						if (ev.xdestroywindow.window == active_window) {
-							update_borders(None);
-							log_message(stdout, LOG_DEBUG, "Window 0x%lx destroyed", ev.xdestroywindow.window);
-						}
-
-						remove_from_client_list(ev.xdestroywindow.window);
-					} break;
-
-				case UnmapNotify:
-					{
-						log_message(stdout, LOG_DEBUG, "Window 0x%lx unmapped", ev.xunmap.window);
-					} break;
-
-
-				case FocusIn:
-					{
-						if (ev.xfocus.window != root) {
-							update_borders(ev.xfocus.window);
+			case KeyPress:
+				{
+					KeySym keysym = XkbKeycodeToKeysym(dpy, ev.xkey.keycode, 0, 0);
+					if (keysym >= XK_1 && keysym <= XK_9) {
+						unsigned long desktop = keysym - XK_1 + 1;
+						if (desktop != current_desktop) {
+							log_message(stdout, LOG_DEBUG, "Switching to desktop %lu", desktop);
+							switch_desktop(desktop);
 						}
 					}
-					break;
+				} break;
 
-				case FocusOut:
-					{
-						if (ev.xfocus.window == active_window) {
-							update_borders(None);
+			case ButtonPress:
+				{
+					if (ev.xbutton.subwindow != None) {
+						XGetWindowAttributes(dpy, ev.xbutton.subwindow, &attr);
+						start = ev.xbutton;
+
+						XRaiseWindow(dpy, start.subwindow);
+						XSetInputFocus(dpy, ev.xbutton.subwindow, RevertToPointerRoot, CurrentTime);
+						update_borders(ev.xbutton.subwindow);
+
+						if (start.button == 1) {
+							log_message(stdout, LOG_DEBUG, "Setting cursor to move");
+							XDefineCursor(dpy, start.subwindow, cursor_move);
+						} else if (start.button == 3) {
+							log_message(stdout, LOG_DEBUG, "Setting cursor to resize");
+							XDefineCursor(dpy, start.subwindow, cursor_resize);
 						}
-					} break;
+						XFlush(dpy);
+					}
+				} break;
 
-				case EnterNotify:
-					{
-						Window entered_window = ev.xcrossing.window;
-						if (entered_window != root && ev.xcrossing.mode == NotifyNormal) {
-							if (entered_window != None && entered_window != active_window) {
-								XRaiseWindow(dpy, entered_window);
-								XSetInputFocus(dpy, entered_window, RevertToPointerRoot, CurrentTime);
-								update_borders(entered_window);
-							}
+			case ButtonRelease:
+				{
+					if (start.subwindow != None) {
+						// Restore default cursor on the client window
+						XDefineCursor(dpy, start.subwindow, None);
+						XFlush(dpy);
+					}
+					start.subwindow = None;
+				} break;
 
-						}
-					} break;
+			case MotionNotify:
+				{
+					if (start.subwindow != None) {
+						int xdiff = ev.xbutton.x_root - start.x_root;
+						int ydiff = ev.xbutton.y_root - start.y_root;
 
-				case KeyPress:
-					{
-						KeySym keysym = XkbKeycodeToKeysym(dpy, ev.xkey.keycode, 0, 0);
-						if (keysym >= XK_1 && keysym <= XK_9) {
-							unsigned long desktop = keysym - XK_1 + 1;
-							if (desktop != current_desktop) {
-								log_message(stdout, LOG_DEBUG, "Switching to desktop %lu", desktop);
-								switch_desktop(desktop);
-							}
-						}
-					} break;
+						XMoveResizeWindow(dpy, start.subwindow,
+								attr.x + (start.button == 1 ? xdiff : 0),
+								attr.y + (start.button == 1 ? ydiff : 0),
+								MAX(1, attr.width  + (start.button == 3 ? xdiff : 0)),
+								MAX(1, attr.height + (start.button == 3 ? ydiff : 0)));
+					}
+				} break;
 
-				case ButtonPress:
-					{
-						if (ev.xbutton.subwindow != None) {
-							XGetWindowAttributes(dpy, ev.xbutton.subwindow, &attr);
-							start = ev.xbutton;
-
-							XRaiseWindow(dpy, start.subwindow);
-							XSetInputFocus(dpy, ev.xbutton.subwindow, RevertToPointerRoot, CurrentTime);
-							update_borders(ev.xbutton.subwindow);
-
-							if (start.button == 1) {
-								log_message(stdout, LOG_DEBUG, "Setting cursor to move");
-								XDefineCursor(dpy, start.subwindow, cursor_move);
-							} else if (start.button == 3) {
-								log_message(stdout, LOG_DEBUG, "Setting cursor to resize");
-								XDefineCursor(dpy, start.subwindow, cursor_resize);
-							}
-							XFlush(dpy);
-						}
-					} break;
-
-				case ButtonRelease:
-					{
-						if (start.subwindow != None) {
-							// Restore default cursor on the client window
-							XDefineCursor(dpy, start.subwindow, None);
-							XFlush(dpy);
-						}
-						start.subwindow = None;
-					} break;
-
-				case MotionNotify:
-					{
-						if (start.subwindow != None) {
-							int xdiff = ev.xbutton.x_root - start.x_root;
-							int ydiff = ev.xbutton.y_root - start.y_root;
-
-							XMoveResizeWindow(dpy, start.subwindow,
-									attr.x + (start.button == 1 ? xdiff : 0),
-									attr.y + (start.button == 1 ? ydiff : 0),
-									MAX(1, attr.width  + (start.button == 3 ? xdiff : 0)),
-									MAX(1, attr.height + (start.button == 3 ? ydiff : 0)));
-						}
-					} break;
-
-				default:
-					break;
-			}
+			default:
+				break;
 		}
 	}
 
