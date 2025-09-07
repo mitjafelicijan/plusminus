@@ -26,9 +26,9 @@ static XEvent ev;
 static int screen;
 
 static unsigned long number_of_desktops = 9;
+static unsigned long current_desktop = 1;
 static unsigned long active_border;
 static unsigned long inactive_border;
-static unsigned long current_desktop = 1;
 
 static Cursor cursor_default;
 static Cursor cursor_move;
