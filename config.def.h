@@ -10,11 +10,11 @@ static char *inactive_border_color = "darkgray";
 // https://cgit.freedesktop.org/xorg/proto/x11proto/tree/XF86keysym.h
 
 static Shortcut shortcuts[] = {
-	/* Mask    KeySym                    Shell command                              */
-	{ MODKEY,  XK_Return,                "st -f \"Berkeley Mono:style=Bold:size=14\" -g 60x40"  },
-	{ 0,       XF86XK_AudioLowerVolume,  "pactl set-sink-volume @DEFAULT_SINK@ -5%"  },
-	{ 0,       XF86XK_AudioRaiseVolume,  "pactl set-sink-volume @DEFAULT_SINK@ +5%"  },
-	{ 0,       XF86XK_AudioMute,         "pactl set-sink-mute @DEFAULT_SINK@ toggle" },
+	/* Mask    KeySym                    Shell command                                         */
+	{ MODKEY,  XK_Return,                "st -f \"Berkeley Mono:style=Bold:size=14\" -g 60x40" },
+	{ 0,       XF86XK_AudioLowerVolume,  "pactl set-sink-volume @DEFAULT_SINK@ -5%"            },
+	{ 0,       XF86XK_AudioRaiseVolume,  "pactl set-sink-volume @DEFAULT_SINK@ +5%"            },
+	{ 0,       XF86XK_AudioMute,         "pactl set-sink-mute @DEFAULT_SINK@ toggle"           },
 };
 
 static Keybinds keybinds[] = {

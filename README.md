@@ -23,3 +23,4 @@ CC=clang make
 - https://www.youtube.com/watch?v=JZcMLjnm1ps
 - https://wumbo.net/symbols/plus-minus/
 - https://cvsweb.openbsd.org/xenocara/app/cwm/
+- https://st.suckless.org/
