@@ -1,13 +1,13 @@
 CC           ?= cc
 CFLAGS       := -std=c99 -pedantic -Wall -Wextra -Wunused -Wswitch-enum
-CPPFLAGS     := $(shell pkg-config --cflags xft)
+INCLUDES     := $(shell pkg-config --cflags xft)
 LDFLAGS      := $(shell pkg-config --libs x11 xft)
 DISPLAY_NUM  := 69
 
 all: config.h plusminus
 
 plusminus: main.c logging.c
-	$(CC) $(CFLAGS) $(CPPFLAGS) -o $@ $^ $(LDFLAGS)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^ $(LDFLAGS)
 
 config.h:
 	[ -f config.h ] || cp config.def.h config.h
