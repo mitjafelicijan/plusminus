@@ -295,6 +295,7 @@ void move_window_x(const Arg *arg) {
 		XWindowAttributes attr;
 		XGetWindowAttributes(dpy, active_window, &attr);
 		XMoveWindow(dpy, active_window, attr.x + arg->i, attr.y);
+		log_message(stdout, LOG_DEBUG, "Move window 0x%lx on X by %d", active_window, arg->i);
 	}
 }
 
@@ -303,6 +304,7 @@ void move_window_y(const Arg *arg) {
 		XWindowAttributes attr;
 		XGetWindowAttributes(dpy, active_window, &attr);
 		XMoveWindow(dpy, active_window, attr.x, attr.y + arg->i);
+		log_message(stdout, LOG_DEBUG, "Move window 0x%lx on Y by %d", active_window, arg->i);
 	}
 }
 
@@ -311,6 +313,7 @@ void resize_window_x(const Arg *arg) {
 		XWindowAttributes attr;
 		XGetWindowAttributes(dpy, active_window, &attr);
 		XResizeWindow(dpy, active_window, MAX(1, attr.width + arg->i), attr.height);
+		log_message(stdout, LOG_DEBUG, "Resize window 0x%lx on X by %d", active_window, arg->i);
 	}
 }
 
@@ -319,7 +322,13 @@ void resize_window_y(const Arg *arg) {
 		XWindowAttributes attr;
 		XGetWindowAttributes(dpy, active_window, &attr);
 		XResizeWindow(dpy, active_window, attr.width, MAX(1, attr.height + arg->i));
+		log_message(stdout, LOG_DEBUG, "Resize window 0x%lx on Y by %d", active_window, arg->i);
 	}
+}
+
+void switch_to_desktop(const Arg *arg) {
+	log_message(stdout, LOG_DEBUG, "Switching to desktop %lu", arg->i);
+	switch_desktop(arg->i);
 }
 
 int main(void) {
@@ -361,19 +370,9 @@ int main(void) {
 	_NET_NUMBER_OF_DESKTOPS = XInternAtom(dpy, "_NET_NUMBER_OF_DESKTOPS", False);
 	_NET_CLIENT_LIST = XInternAtom(dpy, "_NET_CLIENT_LIST", False);
 
-	// Set number of desktops.
+	// Set number of desktops and current desktop.
 	XChangeProperty(dpy, root, _NET_NUMBER_OF_DESKTOPS, XA_CARDINAL, 32, PropModeReplace, (unsigned char *)&number_of_desktops, 1);
-
-	// Set current desktop.
-	unsigned long current_desktop_val = 1;  // Start with desktop 1 (first workspace)
-	XChangeProperty(dpy, root, _NET_CURRENT_DESKTOP, XA_CARDINAL, 32, PropModeReplace, (unsigned char *)&current_desktop_val, 1);
-
-	// Grab keys for desktop switching.
-	for (unsigned long i = 0; i < number_of_desktops; i++) {
-		KeyCode keycode = XKeysymToKeycode(dpy, XK_1 + i);
-		XGrabKey(dpy, keycode, MODKEY, root, True, GrabModeAsync, GrabModeAsync);
-		log_message(stdout, LOG_DEBUG, "Grabbing Mod+%d for desktop %d (keycode: %d)", i + 1, i + 1, keycode);
-	}
+	XChangeProperty(dpy, root, _NET_CURRENT_DESKTOP, XA_CARDINAL, 32, PropModeReplace, (unsigned char *)&current_desktop, 1);
 
 	for (unsigned int i = 0; i < LENGTH(keybinds); i++) {
 		KeyCode keycode = XKeysymToKeycode(dpy, keybinds[i].keysym);
@@ -485,20 +484,10 @@ int main(void) {
 			case KeyPress:
 				{
 					KeySym keysym = XkbKeycodeToKeysym(dpy, ev.xkey.keycode, 0, 0);
-					if (keysym >= XK_1 && keysym <= XK_9) {
-						unsigned long desktop = keysym - XK_1 + 1;
-						if (desktop != current_desktop) {
-							log_message(stdout, LOG_DEBUG, "Switching to desktop %lu", desktop);
-							switch_desktop(desktop);
-						}
-					} else {
-						for (unsigned int i = 0; i < LENGTH(keybinds); i++) {
-							if (keysym == keybinds[i].keysym && (ev.xkey.state & (Mod1Mask|ControlMask|ShiftMask)) == keybinds[i].mod) {
-								/* Arg arg = {0}; */
-								keybinds[i].func(&keybinds[i].arg);
-								/* keybinds[i].func(); */
-								break;
-							}
+					for (unsigned int i = 0; i < LENGTH(keybinds); i++) {
+						if (keysym == keybinds[i].keysym && (ev.xkey.state & (Mod1Mask|ControlMask|ShiftMask)) == keybinds[i].mod) {
+							keybinds[i].func(&keybinds[i].arg);
+							break;
 						}
 					}
 				} break;
