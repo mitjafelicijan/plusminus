@@ -6,7 +6,7 @@ DISPLAY_NUM  := 69
 
 all: config.h plusminus
 
-plusminus: main.c logging.c
+plusminus: main.c logging.c functions.c
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^ $(LDFLAGS)
 
 config.h:

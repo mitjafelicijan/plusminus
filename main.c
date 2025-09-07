@@ -15,21 +15,18 @@
 #include "plusminus.h"
 #include "config.h"
 
-#define MAX(a, b) ((a) > (b) ? (a) : (b))
-#define LENGTH(x) (sizeof(x) / sizeof((x)[0]))
-
-static Display *dpy;
+Display *dpy;
 static Window root;
-static Window active_window = None;
+Window active_window = None;
 static XWindowAttributes attr;
 static XButtonEvent start;
 static XEvent ev;
 static int screen;
 
-static unsigned long number_of_desktops = 9;
+unsigned long number_of_desktops = 9;
 static unsigned long current_desktop = 1;
-static unsigned long active_border;
-static unsigned long inactive_border;
+unsigned long active_border;
+unsigned long inactive_border;
 
 static Cursor cursor_default;
 static Cursor cursor_move;
@@ -58,7 +55,7 @@ static void force_display_redraw(void) {
 	XFlush(dpy);
 }
 
-static int window_exists(Window w) {
+int window_exists(Window w) {
 	if (w == None) return 0;
 	XErrorHandler old = XSetErrorHandler(ignore_x_error);
 	XWindowAttributes attr;
@@ -68,7 +65,7 @@ static int window_exists(Window w) {
 	return s != 0;
 }
 
-static void update_borders(Window new_active) {
+void update_borders(Window new_active) {
 	if (active_window != None && active_window != new_active) {
 		if (window_exists(active_window)) {
 			XSetWindowBorder(dpy, active_window, inactive_border);
@@ -86,7 +83,7 @@ static void update_borders(Window new_active) {
 	active_window = new_active;
 }
 
-static void add_to_client_list(Window window) {
+void add_to_client_list(Window window) {
 	Atom type;
 	int format;
 	unsigned long nitems, bytes_after;
@@ -106,7 +103,7 @@ static void add_to_client_list(Window window) {
 	}
 }
 
-static void remove_from_client_list(Window window) {
+void remove_from_client_list(Window window) {
 	Atom type;
 	int format;
 	unsigned long nitems, bytes_after;
@@ -135,7 +132,7 @@ static void remove_from_client_list(Window window) {
 	}
 }
 
-static void set_window_desktop(Window window, unsigned long desktop) {
+void set_window_desktop(Window window, unsigned long desktop) {
 	Atom type;
 	int format;
 	unsigned long nitems, bytes_after;
@@ -151,7 +148,7 @@ static void set_window_desktop(Window window, unsigned long desktop) {
 	log_message(stdout, LOG_DEBUG, "Window 0x%lx assigned desktop %lu", window, desktop);
 }
 
-static unsigned long get_window_desktop(Window w) {
+unsigned long get_window_desktop(Window w) {
 	if (w == None || !window_exists(w)) {
 		// Default to desktop 0 for invalid windows.
 		return 0; 
@@ -173,7 +170,7 @@ static unsigned long get_window_desktop(Window w) {
 	return desktop;
 }
 
-static void switch_desktop(unsigned long desktop) {
+void switch_desktop(unsigned long desktop) {
 	if (desktop < 1 || desktop > number_of_desktops) return;
 
 	current_desktop = desktop;
@@ -228,7 +225,7 @@ static void switch_desktop(unsigned long desktop) {
 	force_display_redraw();
 }
 
-static void draw_desktop_number(void) {
+void draw_desktop_number(void) {
 	char text[50];
 	snprintf(text, sizeof(text), "%lu", current_desktop);
 
@@ -246,7 +243,7 @@ static void draw_desktop_number(void) {
 	XFlush(dpy);
 }
 
-static void draw_current_time(void) {
+void draw_current_time(void) {
 	int width = DisplayWidth(dpy, screen) - 40;
 	int x = 10;
 	int y = 10;
@@ -290,79 +287,6 @@ static void* expose_timer_thread(void* arg) {
 	return NULL;
 }
 
-void move_window_x(const Arg *arg) {
-	if (active_window != None) {
-		XWindowAttributes attr;
-		XGetWindowAttributes(dpy, active_window, &attr);
-		XMoveWindow(dpy, active_window, attr.x + arg->i, attr.y);
-		log_message(stdout, LOG_DEBUG, "Move window 0x%lx on X by %d", active_window, arg->i);
-	}
-}
-
-void move_window_y(const Arg *arg) {
-	if (active_window != None) {
-		XWindowAttributes attr;
-		XGetWindowAttributes(dpy, active_window, &attr);
-		XMoveWindow(dpy, active_window, attr.x, attr.y + arg->i);
-		log_message(stdout, LOG_DEBUG, "Move window 0x%lx on Y by %d", active_window, arg->i);
-	}
-}
-
-void resize_window_x(const Arg *arg) {
-	if (active_window != None && window_exists(active_window)) {
-		XWindowAttributes attr;
-		XGetWindowAttributes(dpy, active_window, &attr);
-		XResizeWindow(dpy, active_window, MAX(1, attr.width + arg->i), attr.height);
-		log_message(stdout, LOG_DEBUG, "Resize window 0x%lx on X by %d", active_window, arg->i);
-	}
-}
-
-void resize_window_y(const Arg *arg) {
-	if (active_window != None && window_exists(active_window)) {
-		XWindowAttributes attr;
-		XGetWindowAttributes(dpy, active_window, &attr);
-		XResizeWindow(dpy, active_window, attr.width, MAX(1, attr.height + arg->i));
-		log_message(stdout, LOG_DEBUG, "Resize window 0x%lx on Y by %d", active_window, arg->i);
-	}
-}
-
-void switch_to_desktop(const Arg *arg) {
-	log_message(stdout, LOG_DEBUG, "Switching to desktop %lu", arg->i);
-	switch_desktop(arg->i);
-}
-
-void move_to_desktop(const Arg *arg) {
-	if (active_window == None || !window_exists(active_window)) {
-		log_message(stdout, LOG_DEBUG, "No active window to move");
-		return;
-	}
-
-	unsigned long target_desktop = arg->i;
-	if (target_desktop < 1 || target_desktop > number_of_desktops) {
-		log_message(stdout, LOG_DEBUG, "Invalid desktop number: %lu", target_desktop);
-		return;
-	}
-
-	unsigned long current_desktop = get_window_desktop(active_window);
-	if (current_desktop == target_desktop) {
-		log_message(stdout, LOG_DEBUG, "Window already on desktop %lu", target_desktop);
-		return;
-	}
-
-	set_window_desktop(active_window, target_desktop);
-	log_message(stdout, LOG_DEBUG, "Moved window 0x%lx from desktop %lu to desktop %lu", active_window, current_desktop, target_desktop);
-
-	XUnmapWindow(dpy, active_window);
-	log_message(stdout, LOG_DEBUG, "Unmapped window 0x%lx", active_window);
-
-	if (target_desktop != current_desktop) {
-		XSetWindowBorder(dpy, active_window, inactive_border);
-	} else {
-		XSetWindowBorder(dpy, active_window, active_border);
-	}
-
-	XFlush(dpy);
-}
 
 int main(void) {
 	set_log_level(get_log_level_from_env());
@@ -549,7 +473,7 @@ int main(void) {
 			case ButtonRelease:
 				{
 					if (start.subwindow != None) {
-						// Restore default cursor on the client window
+						// Restore default cursor on the client window.
 						XDefineCursor(dpy, start.subwindow, None);
 						XFlush(dpy);
 					}
