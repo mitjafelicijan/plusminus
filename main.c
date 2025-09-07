@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
+#include <sys/time.h>
 
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
@@ -23,6 +25,9 @@
 static Display *dpy;
 static Window root;
 static Window active_window = None;
+static XWindowAttributes attr;
+static XButtonEvent start;
+static XEvent ev;
 static int screen;
 
 static unsigned long active_border_color;
@@ -32,6 +37,13 @@ static unsigned long current_desktop = 1;
 static Cursor cursor_default;
 static Cursor cursor_move;
 static Cursor cursor_resize;
+
+static Visual *visual;
+static Colormap colormap;
+static XftDraw *xft_draw;
+static XftFont *xft_font;
+static XftColor xft_color;
+static XGlyphInfo extents;
 
 static Atom _NET_WM_DESKTOP;
 static Atom _NET_CURRENT_DESKTOP;
@@ -219,50 +231,56 @@ void switch_desktop(unsigned long desktop) {
 	force_display_redraw();
 }
 
-void draw_desktop_text(void) {
-	Visual *visual = DefaultVisual(dpy, screen);
-	Colormap colormap = DefaultColormap(dpy, screen);
-
-	XftDraw *xft_draw = XftDrawCreate(dpy, root, visual, colormap);
-
-	XftFont *xft_font = XftFontOpenName(dpy, screen, FONT_NAME);
-	if (!xft_font) {
-		xft_font = XftFontOpenName(dpy, screen, "monospace-12");
-	}
-
-	XftColor xft_color;
-	XRenderColor render_color = {0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF};
-	XftColorAllocValue(dpy, visual, colormap, &render_color, &xft_color);
-
+void draw_desktop_number(void) {
 	char text[50];
-	snprintf(text, sizeof(text), "Desktop: %lu/%d", current_desktop, NUM_DESKTOPS);
+	snprintf(text, sizeof(text), "%lu", current_desktop);
 
-	XGlyphInfo extents;
 	XftTextExtentsUtf8(dpy, xft_font, (FcChar8 *)text, strlen(text), &extents);
+	XClearArea(dpy, root, DisplayWidth(dpy, screen) - 30, 10, extents.width + 10, extents.height + 10, False);
 
-	XClearArea(dpy, root, 10, 10, extents.width + 20, extents.height + 10, False);
+	XftColor blue_color;
+	XRenderColor render_blue = {0, 0, 0xFFFF, 0xFFFF};
+	XftColorAllocValue(dpy, DefaultVisual(dpy, screen), DefaultColormap(dpy, screen), &render_blue, &blue_color);
 
-	XftDrawStringUtf8(xft_draw, &xft_color, xft_font, 15, 15 + xft_font->ascent, (FcChar8 *)text, strlen(text));
+	XftDrawRect(xft_draw, &blue_color, DisplayWidth(dpy, screen) - 30, 10, extents.width + 10, extents.height + 10);
+	XftDrawStringUtf8(xft_draw, &xft_color, xft_font, DisplayWidth(dpy, screen) - 25, 10 + xft_font->ascent, (FcChar8 *)text, strlen(text));
 
-	XftColorFree(dpy, visual, colormap, &xft_color);
-	if (xft_font) XftFontClose(dpy, xft_font);
-	XftDrawDestroy(xft_draw);
+	XftColorFree(dpy, DefaultVisual(dpy, screen), DefaultColormap(dpy, screen), &blue_color);
 	XFlush(dpy);
 }
 
-void set_root_window_cursor(void) {
-	Cursor cursor = XCreateFontCursor(dpy, XC_left_ptr);
-	XDefineCursor(dpy, root, cursor);
-	XFreeCursor(dpy, cursor);
-	log_message(stdout, LOG_DEBUG, "Set root window cursor");
+void draw_current_time(void) {
+	int width = DisplayWidth(dpy, screen) - 40;
+	int x = 10;
+	int y = 10;
+	char text[50];
+
+	time_t now = time(NULL);
+	struct tm *tm_info = localtime(&now);
+	strftime(text, sizeof(text), "%a %d.%m.%Y %H:%M:%S", tm_info);
+
+	XftTextExtentsUtf8(dpy, xft_font, (FcChar8 *)text, strlen(text), &extents);
+	/* XClearArea(dpy, root, x, y, extents.width, extents.height, False); */
+	XClearArea(dpy, root, 0, 0,  DisplayWidth(dpy, screen) - 30, 50, False);
+	XftDrawStringUtf8(xft_draw, &xft_color, xft_font, width - (xft_font->max_advance_width * strlen(text)) - x, y + xft_font->ascent, (FcChar8 *)text, strlen(text));
+
+	XFlush(dpy);
+}
+
+static void check_and_update_time(Display *dpy) {
+	(void)dpy;
+	static struct timeval last_update = {0, 0};
+	struct timeval now;
+
+	gettimeofday(&now, NULL);
+	if (now.tv_sec > last_update.tv_sec || (now.tv_sec == last_update.tv_sec && now.tv_usec - last_update.tv_usec >= 1000000)) {
+		draw_current_time();
+		last_update = now;
+	}
 }
 
 int main(void) {
 	set_log_level(get_log_level_from_env());
-
-	XWindowAttributes attr;
-	XButtonEvent start;
-	XEvent ev;
 
 	dpy = XOpenDisplay(NULL);
 	if (!dpy) {
@@ -273,13 +291,26 @@ int main(void) {
 	screen = DefaultScreen(dpy);
 	root = RootWindow(dpy, screen);
 
-	// Create cursors
+	// Create cursors.
 	cursor_default = XCreateFontCursor(dpy, XC_left_ptr);
 	cursor_move = XCreateFontCursor(dpy, XC_fleur);
 	cursor_resize  = XCreateFontCursor(dpy, XC_sizing);
 
-	// Set default cursor for root
+	// Set default cursor for root.
 	XDefineCursor(dpy, root, cursor_default);
+
+	// Set fonts and visual stuff.
+	visual = DefaultVisual(dpy, screen);
+	colormap = DefaultColormap(dpy, screen);
+	xft_draw = XftDrawCreate(dpy, root, visual, colormap);
+
+	xft_font = XftFontOpenName(dpy, screen, FONT_NAME);
+	if (!xft_font) {
+		xft_font = XftFontOpenName(dpy, screen, "monospace-12");
+	}
+
+	XRenderColor render_color = {0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF};
+	XftColorAllocValue(dpy, visual, colormap, &render_color, &xft_color);
 
 	// Initialize EWMH atoms for multiple desktop support.
 	_NET_WM_DESKTOP = XInternAtom(dpy, "_NET_WM_DESKTOP", False);
@@ -327,145 +358,163 @@ int main(void) {
 			ButtonPressMask | ExposureMask);
 
 	start.subwindow = None;
-	draw_desktop_text();
+	draw_desktop_number();
+	draw_current_time();
 
 	for(;;) {
-		XNextEvent(dpy, &ev);
+		check_and_update_time(dpy);
+		fd_set fds;
+		struct timeval tv;
+		int x11_fd = ConnectionNumber(dpy);
+		FD_ZERO(&fds);
+		FD_SET(x11_fd, &fds);
+		tv.tv_sec = 0;
+		tv.tv_usec = 100000;
 
-		switch (ev.type) {
-			case Expose:
-				if (ev.xexpose.window == root) {
-					draw_desktop_text();
-				}
-				break;
+		if (select(x11_fd + 1, &fds, NULL, NULL, &tv) > 0) {
+			XNextEvent(dpy, &ev);
 
-			case MapRequest:
-				{
-					Window window = ev.xmaprequest.window;
-					XSetWindowBorderWidth(dpy, window, BORDER_SIZE);
-					XSetWindowBorder(dpy, window, inactive_border_color);
-
-
-					XWindowAttributes check_attr;
-					if (XGetWindowAttributes(dpy, window, &check_attr)) {
-						XSelectInput(dpy, window, EnterWindowMask | LeaveWindowMask);
+			switch (ev.type) {
+				case Expose:
+					if (ev.xexpose.window == root) {
+						draw_desktop_number();
 					}
+					break;
 
-					XMapWindow(dpy, window);
-					log_message(stdout, LOG_DEBUG, "Window 0x%lx mapped", window);
-
-					add_to_client_list(window);
-					set_window_desktop(window, current_desktop);
-				} break;
-
-			case DestroyNotify:
-				{
-					if (ev.xdestroywindow.window == active_window) {
-						update_borders(None);
-						log_message(stdout, LOG_DEBUG, "Window 0x%lx destroyed", ev.xdestroywindow.window);
-					}
-
-					remove_from_client_list(ev.xdestroywindow.window);
-				} break;
-
-			case UnmapNotify:
-				{
-					log_message(stdout, LOG_DEBUG, "Window 0x%lx unmapped", ev.xunmap.window);
-				} break;
+				case MapRequest:
+					{
+						Window window = ev.xmaprequest.window;
+						XSetWindowBorderWidth(dpy, window, BORDER_SIZE);
+						XSetWindowBorder(dpy, window, inactive_border_color);
 
 
-			case FocusIn:
-				{
-					if (ev.xfocus.window != root) {
-						update_borders(ev.xfocus.window);
-					}
-				}
-				break;
-
-			case FocusOut:
-				{
-					if (ev.xfocus.window == active_window) {
-						update_borders(None);
-					}
-				} break;
-
-			case EnterNotify:
-				{
-					Window entered_window = ev.xcrossing.window;
-					if (entered_window != root && ev.xcrossing.mode == NotifyNormal) {
-						if (entered_window != None && entered_window != active_window) {
-							XRaiseWindow(dpy, entered_window);
-							XSetInputFocus(dpy, entered_window, RevertToPointerRoot, CurrentTime);
-							update_borders(entered_window);
+						XWindowAttributes check_attr;
+						if (XGetWindowAttributes(dpy, window, &check_attr)) {
+							XSelectInput(dpy, window, EnterWindowMask | LeaveWindowMask);
 						}
 
-					}
-				} break;
+						XMapWindow(dpy, window);
+						log_message(stdout, LOG_DEBUG, "Window 0x%lx mapped", window);
 
-			case KeyPress:
-				{
-					KeySym keysym = XkbKeycodeToKeysym(dpy, ev.xkey.keycode, 0, 0);
-					if (keysym >= XK_1 && keysym <= XK_9) {
-						unsigned long desktop = keysym - XK_1 + 1;
-						if (desktop != current_desktop) {
-							log_message(stdout, LOG_DEBUG, "Switching to desktop %lu", desktop);
-							switch_desktop(desktop);
+						add_to_client_list(window);
+						set_window_desktop(window, current_desktop);
+					} break;
+
+				case DestroyNotify:
+					{
+						if (ev.xdestroywindow.window == active_window) {
+							update_borders(None);
+							log_message(stdout, LOG_DEBUG, "Window 0x%lx destroyed", ev.xdestroywindow.window);
+						}
+
+						remove_from_client_list(ev.xdestroywindow.window);
+					} break;
+
+				case UnmapNotify:
+					{
+						log_message(stdout, LOG_DEBUG, "Window 0x%lx unmapped", ev.xunmap.window);
+					} break;
+
+
+				case FocusIn:
+					{
+						if (ev.xfocus.window != root) {
+							update_borders(ev.xfocus.window);
 						}
 					}
-				} break;
+					break;
 
-			case ButtonPress:
-				{
-					if (ev.xbutton.subwindow != None) {
-						XGetWindowAttributes(dpy, ev.xbutton.subwindow, &attr);
-						start = ev.xbutton;
-
-						XRaiseWindow(dpy, start.subwindow);
-						XSetInputFocus(dpy, ev.xbutton.subwindow, RevertToPointerRoot, CurrentTime);
-						update_borders(ev.xbutton.subwindow);
-
-						if (start.button == 1) {
-							log_message(stdout, LOG_DEBUG, "Setting cursor to move");
-							XDefineCursor(dpy, start.subwindow, cursor_move);
-						} else if (start.button == 3) {
-							log_message(stdout, LOG_DEBUG, "Setting cursor to resize");
-							XDefineCursor(dpy, start.subwindow, cursor_resize);
+				case FocusOut:
+					{
+						if (ev.xfocus.window == active_window) {
+							update_borders(None);
 						}
-						XFlush(dpy);
-					}
-				} break;
+					} break;
 
-			case ButtonRelease:
-				{
-					if (start.subwindow != None) {
-						// Restore default cursor on the client window
-						XDefineCursor(dpy, start.subwindow, None);
-						XFlush(dpy);
-					}
-					start.subwindow = None;
-				} break;
+				case EnterNotify:
+					{
+						Window entered_window = ev.xcrossing.window;
+						if (entered_window != root && ev.xcrossing.mode == NotifyNormal) {
+							if (entered_window != None && entered_window != active_window) {
+								XRaiseWindow(dpy, entered_window);
+								XSetInputFocus(dpy, entered_window, RevertToPointerRoot, CurrentTime);
+								update_borders(entered_window);
+							}
 
-			case MotionNotify:
-				{
-					if (start.subwindow != None) {
-						int xdiff = ev.xbutton.x_root - start.x_root;
-						int ydiff = ev.xbutton.y_root - start.y_root;
+						}
+					} break;
 
-						XMoveResizeWindow(dpy, start.subwindow,
-								attr.x + (start.button == 1 ? xdiff : 0),
-								attr.y + (start.button == 1 ? ydiff : 0),
-								MAX(1, attr.width  + (start.button == 3 ? xdiff : 0)),
-								MAX(1, attr.height + (start.button == 3 ? ydiff : 0)));
-					}
-				} break;
+				case KeyPress:
+					{
+						KeySym keysym = XkbKeycodeToKeysym(dpy, ev.xkey.keycode, 0, 0);
+						if (keysym >= XK_1 && keysym <= XK_9) {
+							unsigned long desktop = keysym - XK_1 + 1;
+							if (desktop != current_desktop) {
+								log_message(stdout, LOG_DEBUG, "Switching to desktop %lu", desktop);
+								switch_desktop(desktop);
+							}
+						}
+					} break;
 
-			default:
-				break;
+				case ButtonPress:
+					{
+						if (ev.xbutton.subwindow != None) {
+							XGetWindowAttributes(dpy, ev.xbutton.subwindow, &attr);
+							start = ev.xbutton;
+
+							XRaiseWindow(dpy, start.subwindow);
+							XSetInputFocus(dpy, ev.xbutton.subwindow, RevertToPointerRoot, CurrentTime);
+							update_borders(ev.xbutton.subwindow);
+
+							if (start.button == 1) {
+								log_message(stdout, LOG_DEBUG, "Setting cursor to move");
+								XDefineCursor(dpy, start.subwindow, cursor_move);
+							} else if (start.button == 3) {
+								log_message(stdout, LOG_DEBUG, "Setting cursor to resize");
+								XDefineCursor(dpy, start.subwindow, cursor_resize);
+							}
+							XFlush(dpy);
+						}
+					} break;
+
+				case ButtonRelease:
+					{
+						if (start.subwindow != None) {
+							// Restore default cursor on the client window
+							XDefineCursor(dpy, start.subwindow, None);
+							XFlush(dpy);
+						}
+						start.subwindow = None;
+					} break;
+
+				case MotionNotify:
+					{
+						if (start.subwindow != None) {
+							int xdiff = ev.xbutton.x_root - start.x_root;
+							int ydiff = ev.xbutton.y_root - start.y_root;
+
+							XMoveResizeWindow(dpy, start.subwindow,
+									attr.x + (start.button == 1 ? xdiff : 0),
+									attr.y + (start.button == 1 ? ydiff : 0),
+									MAX(1, attr.width  + (start.button == 3 ? xdiff : 0)),
+									MAX(1, attr.height + (start.button == 3 ? ydiff : 0)));
+						}
+					} break;
+
+				default:
+					break;
+			}
 		}
 	}
 
 	XFreeCursor(dpy, cursor_default);
 	XFreeCursor(dpy, cursor_move);
 	XFreeCursor(dpy, cursor_resize);
+
+	XftColorFree(dpy, visual, colormap, &xft_color);
+	if (xft_font) XftFontClose(dpy, xft_font);
+	XftDrawDestroy(xft_draw);
+	XFlush(dpy);
+
 	return 0;
 }
