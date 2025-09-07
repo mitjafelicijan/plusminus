@@ -2,6 +2,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <pthread.h>
+#include <unistd.h>
+
 
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
@@ -251,7 +254,7 @@ void draw_current_time(void) {
 
 	time_t now = time(NULL);
 	struct tm *tm_info = localtime(&now);
-	strftime(text, sizeof(text), "%a %d.%m.%Y %H:%M:%S", tm_info);
+	strftime(text, sizeof(text), "%A %d.%m.%Y %H:%M:%S", tm_info);
 
 	XftTextExtentsUtf8(dpy, xft_font, (FcChar8 *)text, strlen(text), &extents);
 	/* XClearArea(dpy, root, x, y, extents.width, extents.height, False); */
@@ -261,10 +264,35 @@ void draw_current_time(void) {
 	XFlush(dpy);
 }
 
+
+void* expose_timer_thread(void* arg) {
+	(void)arg;
+
+	for(;;) {
+		sleep(1);
+
+		if (dpy != NULL) {
+			XEvent event;
+			memset(&event, 0, sizeof(event));
+
+			event.type = Expose;
+			event.xexpose.window = root;
+			event.xexpose.x = 0;
+			event.xexpose.y = 0;
+			event.xexpose.width = 1;
+			event.xexpose.height = 1;
+			event.xexpose.count = 0;
+
+			// This is thread-safe - XSendEvent is designed for this.
+			XSendEvent(dpy, root, False, ExposureMask, &event);
+			XFlush(dpy);
+		}
+	}
+	return NULL;
+}
+
 int main(void) {
 	set_log_level(get_log_level_from_env());
-
-	printf("font_name: %s\n", font_name);
 
 	dpy = XOpenDisplay(NULL);
 	if (!dpy) {
@@ -341,19 +369,19 @@ int main(void) {
 			ButtonPressMask | ExposureMask);
 
 	start.subwindow = None;
-	draw_desktop_number();
-	draw_current_time();
+
+	// Starts Expose ticker for updating widgets.
+	pthread_t timer_tid;
+	if (pthread_create(&timer_tid, NULL, expose_timer_thread, NULL) != 0) {
+		fprintf(stderr, "failed to create timer thread\n");
+	} else {
+		pthread_detach(timer_tid);
+	}
 
 	for(;;) {
 		XNextEvent(dpy, &ev);
 
 		switch (ev.type) {
-			case Expose:
-				if (ev.xexpose.window == root) {
-					draw_desktop_number();
-				}
-				break;
-
 			case MapRequest:
 				{
 					Window window = ev.xmaprequest.window;
@@ -412,7 +440,6 @@ int main(void) {
 							XSetInputFocus(dpy, entered_window, RevertToPointerRoot, CurrentTime);
 							update_borders(entered_window);
 						}
-
 					}
 				} break;
 
@@ -472,6 +499,13 @@ int main(void) {
 								MAX(1, attr.height + (start.button == 3 ? ydiff : 0)));
 					}
 				} break;
+
+			case Expose:
+				if (ev.xexpose.window == root) {
+					draw_desktop_number();
+					draw_current_time();
+				}
+				break;
 
 			default:
 				break;
