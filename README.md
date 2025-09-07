@@ -1,4 +1,4 @@
-# Minimal X11 Window Manager
+# Tiny X11 Window Manager
 
 ## Requirements
 
