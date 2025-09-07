@@ -24,4 +24,13 @@ static Keybinds keybinds[] = {
 	{ MODKEY,               XK_7,       switch_to_desktop,   { .i = 7   } },
 	{ MODKEY,               XK_8,       switch_to_desktop,   { .i = 8   } },
 	{ MODKEY,               XK_9,       switch_to_desktop,   { .i = 9   } },
+	{ MODKEY | ControlMask, XK_1,       move_to_desktop,     { .i = 1   } },
+	{ MODKEY | ControlMask, XK_2,       move_to_desktop,     { .i = 2   } },
+	{ MODKEY | ControlMask, XK_3,       move_to_desktop,     { .i = 3   } },
+	{ MODKEY | ControlMask, XK_4,       move_to_desktop,     { .i = 4   } },
+	{ MODKEY | ControlMask, XK_5,       move_to_desktop,     { .i = 5   } },
+	{ MODKEY | ControlMask, XK_6,       move_to_desktop,     { .i = 6   } },
+	{ MODKEY | ControlMask, XK_7,       move_to_desktop,     { .i = 7   } },
+	{ MODKEY | ControlMask, XK_8,       move_to_desktop,     { .i = 8   } },
+	{ MODKEY | ControlMask, XK_9,       move_to_desktop,     { .i = 9   } },
 };

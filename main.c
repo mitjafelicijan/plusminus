@@ -331,6 +331,39 @@ void switch_to_desktop(const Arg *arg) {
 	switch_desktop(arg->i);
 }
 
+void move_to_desktop(const Arg *arg) {
+	if (active_window == None || !window_exists(active_window)) {
+		log_message(stdout, LOG_DEBUG, "No active window to move");
+		return;
+	}
+
+	unsigned long target_desktop = arg->i;
+	if (target_desktop < 1 || target_desktop > number_of_desktops) {
+		log_message(stdout, LOG_DEBUG, "Invalid desktop number: %lu", target_desktop);
+		return;
+	}
+
+	unsigned long current_desktop = get_window_desktop(active_window);
+	if (current_desktop == target_desktop) {
+		log_message(stdout, LOG_DEBUG, "Window already on desktop %lu", target_desktop);
+		return;
+	}
+
+	set_window_desktop(active_window, target_desktop);
+	log_message(stdout, LOG_DEBUG, "Moved window 0x%lx from desktop %lu to desktop %lu", active_window, current_desktop, target_desktop);
+
+	XUnmapWindow(dpy, active_window);
+	log_message(stdout, LOG_DEBUG, "Unmapped window 0x%lx", active_window);
+
+	if (target_desktop != current_desktop) {
+		XSetWindowBorder(dpy, active_window, inactive_border);
+	} else {
+		XSetWindowBorder(dpy, active_window, active_border);
+	}
+
+	XFlush(dpy);
+}
+
 int main(void) {
 	set_log_level(get_log_level_from_env());
 

@@ -42,5 +42,6 @@ void move_window_y(const Arg *arg);
 void resize_window_x(const Arg *arg);
 void resize_window_y(const Arg *arg);
 void switch_to_desktop(const Arg *arg);
+void move_to_desktop(const Arg *arg);
 
 #endif // PLUSMINUS_H
