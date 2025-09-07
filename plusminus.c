@@ -11,15 +11,9 @@
 #include <X11/Xft/Xft.h>
 
 #include "plusminus.h"
+#include "config.h"
 
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
-
-#define MOD Mod1Mask
-#define BORDER_SIZE 4
-#define ACTIVE_BORDER_COLOR "red"
-#define INACTIVE_BORDER_COLOR "gray"
-#define NUM_DESKTOPS 9
-#define FONT_NAME "Berkeley Mono:style=Bold:size=16"
 
 static Display *dpy;
 static Window root;
@@ -29,8 +23,9 @@ static XButtonEvent start;
 static XEvent ev;
 static int screen;
 
-static unsigned long active_border_color;
-static unsigned long inactive_border_color;
+static unsigned long number_of_desktops = 9;
+static unsigned long active_border;
+static unsigned long inactive_border;
 static unsigned long current_desktop = 1;
 
 static Cursor cursor_default;
@@ -73,13 +68,13 @@ int window_exists(Window w) {
 void update_borders(Window new_active) {
 	if (active_window != None && active_window != new_active) {
 		if (window_exists(active_window)) {
-			XSetWindowBorder(dpy, active_window, inactive_border_color);
+			XSetWindowBorder(dpy, active_window, inactive_border);
 		}
 	}
 
 	if (new_active != None) {
 		if (window_exists(new_active)) {
-			XSetWindowBorder(dpy, new_active, active_border_color);
+			XSetWindowBorder(dpy, new_active, active_border);
 		} else {
 			new_active = None;
 		}
@@ -176,7 +171,7 @@ unsigned long get_window_desktop(Window w) {
 }
 
 void switch_desktop(unsigned long desktop) {
-	if (desktop < 1 || desktop > NUM_DESKTOPS) return;
+	if (desktop < 1 || desktop > number_of_desktops) return;
 
 	current_desktop = desktop;
 
@@ -221,7 +216,7 @@ void switch_desktop(unsigned long desktop) {
 
 	if (active_window != None) {
 		if (window_exists(active_window)) {
-			XSetWindowBorder(dpy, active_window, inactive_border_color);
+			XSetWindowBorder(dpy, active_window, inactive_border);
 		}
 		active_window = None;
 	}
@@ -269,6 +264,8 @@ void draw_current_time(void) {
 int main(void) {
 	set_log_level(get_log_level_from_env());
 
+	printf("font_name: %s\n", font_name);
+
 	dpy = XOpenDisplay(NULL);
 	if (!dpy) {
 		fprintf(stderr, "cannot open display\n");
@@ -291,7 +288,7 @@ int main(void) {
 	colormap = DefaultColormap(dpy, screen);
 	xft_draw = XftDrawCreate(dpy, root, visual, colormap);
 
-	xft_font = XftFontOpenName(dpy, screen, FONT_NAME);
+	xft_font = XftFontOpenName(dpy, screen, font_name);
 	if (!xft_font) {
 		xft_font = XftFontOpenName(dpy, screen, "monospace-12");
 	}
@@ -306,36 +303,35 @@ int main(void) {
 	_NET_CLIENT_LIST = XInternAtom(dpy, "_NET_CLIENT_LIST", False);
 
 	// Set number of desktops.
-	unsigned long num_desktops = NUM_DESKTOPS;
-	XChangeProperty(dpy, root, _NET_NUMBER_OF_DESKTOPS, XA_CARDINAL, 32, PropModeReplace, (unsigned char *)&num_desktops, 1);
+	XChangeProperty(dpy, root, _NET_NUMBER_OF_DESKTOPS, XA_CARDINAL, 32, PropModeReplace, (unsigned char *)&number_of_desktops, 1);
 
 	// Set current desktop.
 	unsigned long current_desktop_val = 1;  // Start with desktop 1 (first workspace)
 	XChangeProperty(dpy, root, _NET_CURRENT_DESKTOP, XA_CARDINAL, 32, PropModeReplace, (unsigned char *)&current_desktop_val, 1);
 
 	// Grab keys for desktop switching.
-	for (int i = 0; i < NUM_DESKTOPS; i++) {
+	for (unsigned long i = 0; i < number_of_desktops; i++) {
 		KeyCode keycode = XKeysymToKeycode(dpy, XK_1 + i);
-		XGrabKey(dpy, keycode, MOD, root, True, GrabModeAsync, GrabModeAsync);
+		XGrabKey(dpy, keycode, MODKEY, root, True, GrabModeAsync, GrabModeAsync);
 		log_message(stdout, LOG_DEBUG, "Grabbing Mod+%d for desktop %d (keycode: %d)", i + 1, i + 1, keycode);
 	}
 
 	// Grab keys for window dragging.
-	XGrabButton(dpy, 1, MOD, root, True, ButtonPressMask|ButtonReleaseMask|PointerMotionMask, GrabModeAsync, GrabModeAsync, None, None);
-	XGrabButton(dpy, 3, MOD, root, True, ButtonPressMask|ButtonReleaseMask|PointerMotionMask, GrabModeAsync, GrabModeAsync, None, None);
+	XGrabButton(dpy, 1, MODKEY, root, True, ButtonPressMask|ButtonReleaseMask|PointerMotionMask, GrabModeAsync, GrabModeAsync, None, None);
+	XGrabButton(dpy, 3, MODKEY, root, True, ButtonPressMask|ButtonReleaseMask|PointerMotionMask, GrabModeAsync, GrabModeAsync, None, None);
 
 	// Prepare border colors.
 	Colormap cmap = DefaultColormap(dpy, screen);
 	XColor active_color, inactive_color, dummy;
-	active_border_color = BlackPixel(dpy, screen);
-	inactive_border_color = BlackPixel(dpy, screen);
+	active_border= BlackPixel(dpy, screen);
+	inactive_border= BlackPixel(dpy, screen);
 
-	if (XAllocNamedColor(dpy, cmap, ACTIVE_BORDER_COLOR, &active_color, &dummy)) {
-		active_border_color = active_color.pixel;
+	if (XAllocNamedColor(dpy, cmap, active_border_color, &active_color, &dummy)) {
+		active_border = active_color.pixel;
 	}
 
-	if (XAllocNamedColor(dpy, cmap, INACTIVE_BORDER_COLOR, &inactive_color, &dummy)) {
-		inactive_border_color = inactive_color.pixel;
+	if (XAllocNamedColor(dpy, cmap, inactive_border_color, &inactive_color, &dummy)) {
+		inactive_border = inactive_color.pixel;
 	}
 
 	// Root window input selection masks.
@@ -361,8 +357,8 @@ int main(void) {
 			case MapRequest:
 				{
 					Window window = ev.xmaprequest.window;
-					XSetWindowBorderWidth(dpy, window, BORDER_SIZE);
-					XSetWindowBorder(dpy, window, inactive_border_color);
+					XSetWindowBorderWidth(dpy, window, border_size);
+					XSetWindowBorder(dpy, window, inactive_border);
 
 					XWindowAttributes check_attr;
 					if (XGetWindowAttributes(dpy, window, &check_attr)) {

@@ -4,8 +4,13 @@ CPPFLAGS     := $(shell pkg-config --cflags xft)
 LDFLAGS      := $(shell pkg-config --libs x11 xft)
 DISPLAY_NUM  := 69
 
-plusminus: main.c logging.c
+all: config.h plusminus
+
+plusminus: plusminus.c logging.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) -o $@ $^ $(LDFLAGS)
+
+config.h:
+	[ -f config.h ] || cp config.def.h config.h
 
 virt:
 	Xephyr -screen 1000x1000 :$(DISPLAY_NUM)
