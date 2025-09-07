@@ -9,10 +9,12 @@
 #include <X11/cursorfont.h>
 #include <X11/Xft/Xft.h>
 
+#include "plusminus.h"
+
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 
 #define MOD Mod1Mask
-#define BORDER_SIZE 3
+#define BORDER_SIZE 4
 #define ACTIVE_BORDER_COLOR "red"
 #define INACTIVE_BORDER_COLOR "gray"
 #define NUM_DESKTOPS 9
@@ -22,9 +24,14 @@ static Display *dpy;
 static Window root;
 static Window active_window = None;
 static int screen;
+
 static unsigned long active_border_color;
 static unsigned long inactive_border_color;
 static unsigned long current_desktop = 1;
+
+static Cursor cursor_default;
+static Cursor cursor_move;
+static Cursor cursor_resize;
 
 static Atom _NET_WM_DESKTOP;
 static Atom _NET_CURRENT_DESKTOP;
@@ -132,7 +139,7 @@ void set_window_desktop(Window window, unsigned long desktop) {
 	unsigned long value = desktop;
 	XChangeProperty(dpy, window, _NET_WM_DESKTOP, XA_CARDINAL, 32, PropModeReplace, (unsigned char *)&value, 1);
 
-	printf("> Window 0x%lx assigned desktop %lu\n", window, desktop);
+	log_message(stdout, LOG_DEBUG, "Window 0x%lx assigned desktop %lu", window, desktop);
 }
 
 unsigned long get_window_desktop(Window w) {
@@ -180,18 +187,18 @@ void switch_desktop(unsigned long desktop) {
 				Window w = windows[i];
 
 				if (!window_exists(w)) {
-					printf("> Window 0x%lx no longer exists, skipping\n", w);
+					log_message(stdout, LOG_DEBUG, "Window 0x%lx no longer exists, skipping", w);
 					continue;
 				}
 
 				unsigned long window_desktop = get_window_desktop(w);
-				printf("> Processing window 0x%lx on desktop %lu (current: %lu)\n", w, window_desktop, current_desktop);
+				log_message(stdout, LOG_DEBUG, "Processing window 0x%lx on desktop %lu (current: %lu)", w, window_desktop, current_desktop);
 
 				if (window_desktop == current_desktop) {
-					printf("> Mapping window 0x%lx\n", w);
+					log_message(stdout, LOG_DEBUG, "Mapping window 0x%lx", w);
 					XMapWindow(dpy, w);
 				} else {
-					printf("> Unmapping window 0x%lx\n", w);
+					log_message(stdout, LOG_DEBUG, "Unmapping window 0x%lx", w);
 					XUnmapWindow(dpy, w);
 				}
 			}
@@ -208,7 +215,7 @@ void switch_desktop(unsigned long desktop) {
 		active_window = None;
 	}
 
-	printf("> Switched to desktop %lu\n", desktop);
+	log_message(stdout, LOG_DEBUG, "Switched to desktop %lu", desktop);
 	force_display_redraw();
 }
 
@@ -247,10 +254,12 @@ void set_root_window_cursor(void) {
 	Cursor cursor = XCreateFontCursor(dpy, XC_left_ptr);
 	XDefineCursor(dpy, root, cursor);
 	XFreeCursor(dpy, cursor);
-	printf("> Set root window cursor\n");
+	log_message(stdout, LOG_DEBUG, "Set root window cursor");
 }
 
 int main(void) {
+	set_log_level(get_log_level_from_env());
+
 	XWindowAttributes attr;
 	XButtonEvent start;
 	XEvent ev;
@@ -264,8 +273,13 @@ int main(void) {
 	screen = DefaultScreen(dpy);
 	root = RootWindow(dpy, screen);
 
-	// Enables default cursor on empty desktop as well.
-	set_root_window_cursor();
+	// Create cursors
+	cursor_default = XCreateFontCursor(dpy, XC_left_ptr);
+	cursor_move = XCreateFontCursor(dpy, XC_fleur);
+	cursor_resize  = XCreateFontCursor(dpy, XC_sizing);
+
+	// Set default cursor for root
+	XDefineCursor(dpy, root, cursor_default);
 
 	// Initialize EWMH atoms for multiple desktop support.
 	_NET_WM_DESKTOP = XInternAtom(dpy, "_NET_WM_DESKTOP", False);
@@ -284,8 +298,8 @@ int main(void) {
 	// Grab keys for desktop switching.
 	for (int i = 0; i < NUM_DESKTOPS; i++) {
 		KeyCode keycode = XKeysymToKeycode(dpy, XK_1 + i);
-		printf("> Grabbing Mod+%d for desktop %d (keycode: %d)\n", i + 1, i + 1, keycode);
 		XGrabKey(dpy, keycode, MOD, root, True, GrabModeAsync, GrabModeAsync);
+		log_message(stdout, LOG_DEBUG, "Grabbing Mod+%d for desktop %d (keycode: %d)", i + 1, i + 1, keycode);
 	}
 
 	// Grab keys for window dragging.
@@ -338,7 +352,7 @@ int main(void) {
 					}
 
 					XMapWindow(dpy, window);
-					printf("> Window 0x%lx mapped\n", window);
+					log_message(stdout, LOG_DEBUG, "Window 0x%lx mapped", window);
 
 					add_to_client_list(window);
 					set_window_desktop(window, current_desktop);
@@ -348,7 +362,7 @@ int main(void) {
 				{
 					if (ev.xdestroywindow.window == active_window) {
 						update_borders(None);
-						printf("> Window 0x%lx destroyed\n", ev.xdestroywindow.window);
+						log_message(stdout, LOG_DEBUG, "Window 0x%lx destroyed", ev.xdestroywindow.window);
 					}
 
 					remove_from_client_list(ev.xdestroywindow.window);
@@ -356,7 +370,7 @@ int main(void) {
 
 			case UnmapNotify:
 				{
-					printf("> Window 0x%lx unmapped\n", ev.xunmap.window);
+					log_message(stdout, LOG_DEBUG, "Window 0x%lx unmapped", ev.xunmap.window);
 				} break;
 
 
@@ -394,7 +408,7 @@ int main(void) {
 					if (keysym >= XK_1 && keysym <= XK_9) {
 						unsigned long desktop = keysym - XK_1 + 1;
 						if (desktop != current_desktop) {
-							printf("> Switching to desktop %lu\n", desktop);
+							log_message(stdout, LOG_DEBUG, "Switching to desktop %lu", desktop);
 							switch_desktop(desktop);
 						}
 					}
@@ -409,7 +423,26 @@ int main(void) {
 						XRaiseWindow(dpy, start.subwindow);
 						XSetInputFocus(dpy, ev.xbutton.subwindow, RevertToPointerRoot, CurrentTime);
 						update_borders(ev.xbutton.subwindow);
+
+						if (start.button == 1) {
+							log_message(stdout, LOG_DEBUG, "Setting cursor to move");
+							XDefineCursor(dpy, start.subwindow, cursor_move);
+						} else if (start.button == 3) {
+							log_message(stdout, LOG_DEBUG, "Setting cursor to resize");
+							XDefineCursor(dpy, start.subwindow, cursor_resize);
+						}
+						XFlush(dpy);
 					}
+				} break;
+
+			case ButtonRelease:
+				{
+					if (start.subwindow != None) {
+						// Restore default cursor on the client window
+						XDefineCursor(dpy, start.subwindow, None);
+						XFlush(dpy);
+					}
+					start.subwindow = None;
 				} break;
 
 			case MotionNotify:
@@ -426,13 +459,13 @@ int main(void) {
 					}
 				} break;
 
-			case ButtonRelease:
-				{
-					start.subwindow = None;
-				} break;
-
 			default:
 				break;
 		}
 	}
+
+	XFreeCursor(dpy, cursor_default);
+	XFreeCursor(dpy, cursor_move);
+	XFreeCursor(dpy, cursor_resize);
+	return 0;
 }
