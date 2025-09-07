@@ -263,7 +263,6 @@ void draw_current_time(void) {
 	XFlush(dpy);
 }
 
-
 void* expose_timer_thread(void* arg) {
 	(void)arg;
 
