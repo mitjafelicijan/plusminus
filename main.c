@@ -420,6 +420,25 @@ int main(void) {
 					XWindowAttributes check_attr;
 					if (XGetWindowAttributes(dpy, window, &check_attr)) {
 						XSelectInput(dpy, window, EnterWindowMask | LeaveWindowMask);
+
+						Window root_return, child_return;
+						int root_x, root_y, win_x, win_y;
+						unsigned int mask;
+
+						if (XQueryPointer(dpy, DefaultRootWindow(dpy), &root_return, &child_return, &root_x, &root_y, &win_x, &win_y, &mask)) {
+							int new_x = root_x - (check_attr.width / 2);
+							int new_y = root_y - (check_attr.height / 2);
+							int screen_width = DisplayWidth(dpy, DefaultScreen(dpy));
+							int screen_height = DisplayHeight(dpy, DefaultScreen(dpy));
+
+							if (new_x < 0) new_x = 0;
+							if (new_y < 0) new_y = 0;
+							if (new_x + check_attr.width > screen_width) new_x = screen_width - check_attr.width;
+							if (new_y + check_attr.height > screen_height) new_y = screen_height - check_attr.height;
+
+							XMoveWindow(dpy, window, new_x, new_y);
+							log_message(stdout, LOG_DEBUG, "Positioned new window 0x%lx at cursor (%d, %d)", window, root_x, root_y);
+						}
 					}
 
 					XMapWindow(dpy, window);
@@ -539,8 +558,8 @@ int main(void) {
 						XMoveResizeWindow(dpy, start.subwindow,
 								attr.x + (start.button == 1 ? xdiff : 0),
 								attr.y + (start.button == 1 ? ydiff : 0),
-								MAX(1, attr.width  + (start.button == 3 ? xdiff : 0)),
-								MAX(1, attr.height + (start.button == 3 ? ydiff : 0)));
+								MAX(50, attr.width  + (start.button == 3 ? xdiff : 0)),
+								MAX(50, attr.height + (start.button == 3 ? ydiff : 0)));
 					}
 				} break;
 
