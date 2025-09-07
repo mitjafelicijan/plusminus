@@ -478,7 +478,7 @@ int main(void) {
 
 					// Check keybinds first.
 					for (unsigned int i = 0; i < LENGTH(keybinds); i++) {
-						if (keysym == keybinds[i].keysym && (ev.xkey.state & (Mod1Mask|ControlMask|ShiftMask)) == keybinds[i].mod) {
+						if (keysym == keybinds[i].keysym && (ev.xkey.state & (Mod1Mask|Mod2Mask|Mod3Mask|Mod4Mask|ControlMask|ShiftMask)) == keybinds[i].mod) {
 							keybinds[i].func(&keybinds[i].arg);
 							break;
 						}
@@ -486,7 +486,7 @@ int main(void) {
 
 					// Check shortcuts.
 					for (unsigned int i = 0; i < LENGTH(shortcuts); i++) {
-						if (keysym == shortcuts[i].keysym && (ev.xkey.state & (Mod1Mask|ControlMask|ShiftMask)) == shortcuts[i].mod) {
+						if (keysym == shortcuts[i].keysym && (ev.xkey.state & (Mod1Mask|Mod2Mask|Mod3Mask|Mod4Mask|ControlMask|ShiftMask)) == shortcuts[i].mod) {
 							execute_shortcut(shortcuts[i].cmd);
 							break;
 						}
@@ -503,12 +503,15 @@ int main(void) {
 						XSetInputFocus(dpy, ev.xbutton.subwindow, RevertToPointerRoot, CurrentTime);
 						update_borders(ev.xbutton.subwindow);
 
-						if (start.button == 1) {
-							log_message(stdout, LOG_DEBUG, "Setting cursor to move");
-							XDefineCursor(dpy, start.subwindow, cursor_move);
-						} else if (start.button == 3) {
-							log_message(stdout, LOG_DEBUG, "Setting cursor to resize");
-							XDefineCursor(dpy, start.subwindow, cursor_resize);
+						// Only change cursor if we're actually dragging (MODKEY is held)
+						if (ev.xbutton.state & MODKEY) {
+							if (start.button == 1) {
+								log_message(stdout, LOG_DEBUG, "Setting cursor to move");
+								XDefineCursor(dpy, start.subwindow, cursor_move);
+							} else if (start.button == 3) {
+								log_message(stdout, LOG_DEBUG, "Setting cursor to resize");
+								XDefineCursor(dpy, start.subwindow, cursor_resize);
+							}
 						}
 						XFlush(dpy);
 					}
@@ -517,18 +520,21 @@ int main(void) {
 			case ButtonRelease:
 				{
 					if (start.subwindow != None) {
-						// Restore default cursor on the client window.
-						XDefineCursor(dpy, start.subwindow, None);
-						XFlush(dpy);
+						// Only restore cursor if we changed it (MODKEY was held during press)
+						if (start.state & MODKEY) {
+							// Restore default cursor on the client window.
+							XDefineCursor(dpy, start.subwindow, None);
+							XFlush(dpy);
+						}
 					}
 					start.subwindow = None;
 				} break;
 
 			case MotionNotify:
 				{
-					if (start.subwindow != None) {
-						int xdiff = ev.xbutton.x_root - start.x_root;
-						int ydiff = ev.xbutton.y_root - start.y_root;
+					if (start.subwindow != None && (start.state & MODKEY)) {
+						int xdiff = ev.xmotion.x_root - start.x_root;
+						int ydiff = ev.xmotion.y_root - start.y_root;
 
 						XMoveResizeWindow(dpy, start.subwindow,
 								attr.x + (start.button == 1 ? xdiff : 0),
