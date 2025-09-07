@@ -45,4 +45,5 @@ static Keybinds keybinds[] = {
 	{ MODKEY | ControlMask, XK_7,       move_to_desktop,     { .i = 7 }   },
 	{ MODKEY | ControlMask, XK_8,       move_to_desktop,     { .i = 8 }   },
 	{ MODKEY | ControlMask, XK_9,       move_to_desktop,     { .i = 9 }   },
+	{ MODKEY,               XK_q,       kill_window,         { 0 }        },
 };

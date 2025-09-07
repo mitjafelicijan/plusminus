@@ -425,11 +425,11 @@ int main(void) {
 						int root_x, root_y, win_x, win_y;
 						unsigned int mask;
 
-						if (XQueryPointer(dpy, DefaultRootWindow(dpy), &root_return, &child_return, &root_x, &root_y, &win_x, &win_y, &mask)) {
+						if (XQueryPointer(dpy, root, &root_return, &child_return, &root_x, &root_y, &win_x, &win_y, &mask)) {
 							int new_x = root_x - (check_attr.width / 2);
 							int new_y = root_y - (check_attr.height / 2);
-							int screen_width = DisplayWidth(dpy, DefaultScreen(dpy));
-							int screen_height = DisplayHeight(dpy, DefaultScreen(dpy));
+							int screen_width = DisplayWidth(dpy, screen);
+							int screen_height = DisplayHeight(dpy, screen);
 
 							if (new_x < 0) new_x = 0;
 							if (new_y < 0) new_y = 0;

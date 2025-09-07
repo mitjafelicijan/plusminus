@@ -80,3 +80,16 @@ void move_to_desktop(const Arg *arg) {
 
 	XFlush(dpy);
 }
+
+void kill_window(const Arg *arg) {
+	(void)arg;
+
+	if (active_window == None || !window_exists(active_window)) {
+		log_message(stdout, LOG_DEBUG, "No active window to kill");
+		return;
+	}
+
+	XKillClient(dpy, active_window);
+	XFlush(dpy);
+	log_message(stdout, LOG_DEBUG, "Force killed window 0x%lx", active_window);
+}
