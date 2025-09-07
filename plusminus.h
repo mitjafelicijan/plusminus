@@ -27,6 +27,7 @@ typedef struct {
 typedef struct {
 	unsigned int mod;
 	KeySym keysym;
+	const char *cmd;
 } Shortcut;
 
 typedef enum {
@@ -57,6 +58,7 @@ void add_to_client_list(Window window);
 void remove_from_client_list(Window window);
 void draw_desktop_number(void);
 void draw_current_time(void);
+void execute_shortcut(const char *command);
 
 // Function implementations.
 void move_window_x(const Arg *arg);

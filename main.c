@@ -4,10 +4,12 @@
 #include <time.h>
 #include <pthread.h>
 #include <unistd.h>
+#include <sys/wait.h>
 
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
 #include <X11/keysym.h>
+#include <X11/XF86keysym.h>
 #include <X11/XKBlib.h>
 #include <X11/cursorfont.h>
 #include <X11/Xft/Xft.h>
@@ -53,6 +55,27 @@ static int ignore_x_error(Display *dpy, XErrorEvent *err) {
 static void force_display_redraw(void) {
 	XClearArea(dpy, root, 0, 0, 1, 1, True);
 	XFlush(dpy);
+}
+
+void execute_shortcut(const char *command) {
+	if (!command || strlen(command) == 0) {
+		log_message(stderr, LOG_WARNING, "Empty command provided to execute_shortcut");
+		return;
+	}
+
+	pid_t pid = fork();
+	if (pid == -1) {
+		log_message(stderr, LOG_ERROR, "Failed to fork process for command: %s", command);
+		return;
+	}
+
+	if (pid == 0) {
+		execl("/bin/sh", "sh", "-c", command, (char *)NULL);
+		log_message(stderr, LOG_ERROR, "Failed to execute command: %s", command);
+		exit(1);
+	} else {
+		log_message(stdout, LOG_DEBUG, "Executed command in background: %s", command);
+	}
 }
 
 int window_exists(Window w) {
@@ -151,6 +174,7 @@ void set_window_desktop(Window window, unsigned long desktop) {
 unsigned long get_window_desktop(Window w) {
 	if (w == None || !window_exists(w)) {
 		// Default to desktop 0 for invalid windows.
+		// This is a workaround to avoid crashing the program.
 		return 0; 
 	}
 
@@ -331,11 +355,21 @@ int main(void) {
 	XChangeProperty(dpy, root, _NET_NUMBER_OF_DESKTOPS, XA_CARDINAL, 32, PropModeReplace, (unsigned char *)&number_of_desktops, 1);
 	XChangeProperty(dpy, root, _NET_CURRENT_DESKTOP, XA_CARDINAL, 32, PropModeReplace, (unsigned char *)&current_desktop, 1);
 
+	// Grab keys for keybinds.
 	for (unsigned int i = 0; i < LENGTH(keybinds); i++) {
 		KeyCode keycode = XKeysymToKeycode(dpy, keybinds[i].keysym);
 		if (keycode) {
 			XGrabKey(dpy, keycode, keybinds[i].mod, root, True, GrabModeAsync, GrabModeAsync);
 			log_message(stdout, LOG_DEBUG, "Grabbed key: mod=0x%x, keysym=0x%lx", keybinds[i].mod, keybinds[i].keysym);
+		}
+	}
+
+	// Grab keys for shortcuts.
+	for (unsigned int i = 0; i < LENGTH(shortcuts); i++) {
+		KeyCode keycode = XKeysymToKeycode(dpy, shortcuts[i].keysym);
+		if (keycode) {
+			XGrabKey(dpy, keycode, shortcuts[i].mod, root, True, GrabModeAsync, GrabModeAsync);
+			log_message(stdout, LOG_DEBUG, "Grabbed shortcut: mod=0x%x, keysym=0x%lx, command=%s", shortcuts[i].mod, shortcuts[i].keysym, shortcuts[i].cmd);
 		}
 	}
 
@@ -441,9 +475,19 @@ int main(void) {
 			case KeyPress:
 				{
 					KeySym keysym = XkbKeycodeToKeysym(dpy, ev.xkey.keycode, 0, 0);
+
+					// Check keybinds first.
 					for (unsigned int i = 0; i < LENGTH(keybinds); i++) {
 						if (keysym == keybinds[i].keysym && (ev.xkey.state & (Mod1Mask|ControlMask|ShiftMask)) == keybinds[i].mod) {
 							keybinds[i].func(&keybinds[i].arg);
+							break;
+						}
+					}
+
+					// Check shortcuts.
+					for (unsigned int i = 0; i < LENGTH(shortcuts); i++) {
+						if (keysym == shortcuts[i].keysym && (ev.xkey.state & (Mod1Mask|ControlMask|ShiftMask)) == shortcuts[i].mod) {
+							execute_shortcut(shortcuts[i].cmd);
 							break;
 						}
 					}
