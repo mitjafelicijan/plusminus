@@ -16,6 +16,7 @@
 #include "config.h"
 
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
+#define LENGTH(x) (sizeof(x) / sizeof((x)[0]))
 
 static Display *dpy;
 static Window root;
@@ -52,12 +53,12 @@ static int ignore_x_error(Display *dpy, XErrorEvent *err) {
 	return 0;
 }
 
-void force_display_redraw(void) {
+static void force_display_redraw(void) {
 	XClearArea(dpy, root, 0, 0, 1, 1, True);
 	XFlush(dpy);
 }
 
-int window_exists(Window w) {
+static int window_exists(Window w) {
 	if (w == None) return 0;
 	XErrorHandler old = XSetErrorHandler(ignore_x_error);
 	XWindowAttributes attr;
@@ -67,7 +68,7 @@ int window_exists(Window w) {
 	return s != 0;
 }
 
-void update_borders(Window new_active) {
+static void update_borders(Window new_active) {
 	if (active_window != None && active_window != new_active) {
 		if (window_exists(active_window)) {
 			XSetWindowBorder(dpy, active_window, inactive_border);
@@ -85,7 +86,7 @@ void update_borders(Window new_active) {
 	active_window = new_active;
 }
 
-void add_to_client_list(Window window) {
+static void add_to_client_list(Window window) {
 	Atom type;
 	int format;
 	unsigned long nitems, bytes_after;
@@ -105,7 +106,7 @@ void add_to_client_list(Window window) {
 	}
 }
 
-void remove_from_client_list(Window window) {
+static void remove_from_client_list(Window window) {
 	Atom type;
 	int format;
 	unsigned long nitems, bytes_after;
@@ -134,7 +135,7 @@ void remove_from_client_list(Window window) {
 	}
 }
 
-void set_window_desktop(Window window, unsigned long desktop) {
+static void set_window_desktop(Window window, unsigned long desktop) {
 	Atom type;
 	int format;
 	unsigned long nitems, bytes_after;
@@ -150,7 +151,7 @@ void set_window_desktop(Window window, unsigned long desktop) {
 	log_message(stdout, LOG_DEBUG, "Window 0x%lx assigned desktop %lu", window, desktop);
 }
 
-unsigned long get_window_desktop(Window w) {
+static unsigned long get_window_desktop(Window w) {
 	if (w == None || !window_exists(w)) {
 		// Default to desktop 0 for invalid windows.
 		return 0; 
@@ -172,7 +173,7 @@ unsigned long get_window_desktop(Window w) {
 	return desktop;
 }
 
-void switch_desktop(unsigned long desktop) {
+static void switch_desktop(unsigned long desktop) {
 	if (desktop < 1 || desktop > number_of_desktops) return;
 
 	current_desktop = desktop;
@@ -227,7 +228,7 @@ void switch_desktop(unsigned long desktop) {
 	force_display_redraw();
 }
 
-void draw_desktop_number(void) {
+static void draw_desktop_number(void) {
 	char text[50];
 	snprintf(text, sizeof(text), "%lu", current_desktop);
 
@@ -245,7 +246,7 @@ void draw_desktop_number(void) {
 	XFlush(dpy);
 }
 
-void draw_current_time(void) {
+static void draw_current_time(void) {
 	int width = DisplayWidth(dpy, screen) - 40;
 	int x = 10;
 	int y = 10;
@@ -263,7 +264,7 @@ void draw_current_time(void) {
 	XFlush(dpy);
 }
 
-void* expose_timer_thread(void* arg) {
+static void* expose_timer_thread(void* arg) {
 	(void)arg;
 
 	for(;;) {
@@ -287,6 +288,38 @@ void* expose_timer_thread(void* arg) {
 		}
 	}
 	return NULL;
+}
+
+void move_window_x(const Arg *arg) {
+	if (active_window != None) {
+		XWindowAttributes attr;
+		XGetWindowAttributes(dpy, active_window, &attr);
+		XMoveWindow(dpy, active_window, attr.x + arg->i, attr.y);
+	}
+}
+
+void move_window_y(const Arg *arg) {
+	if (active_window != None) {
+		XWindowAttributes attr;
+		XGetWindowAttributes(dpy, active_window, &attr);
+		XMoveWindow(dpy, active_window, attr.x, attr.y + arg->i);
+	}
+}
+
+void resize_window_x(const Arg *arg) {
+	if (active_window != None && window_exists(active_window)) {
+		XWindowAttributes attr;
+		XGetWindowAttributes(dpy, active_window, &attr);
+		XResizeWindow(dpy, active_window, MAX(1, attr.width + arg->i), attr.height);
+	}
+}
+
+void resize_window_y(const Arg *arg) {
+	if (active_window != None && window_exists(active_window)) {
+		XWindowAttributes attr;
+		XGetWindowAttributes(dpy, active_window, &attr);
+		XResizeWindow(dpy, active_window, attr.width, MAX(1, attr.height + arg->i));
+	}
 }
 
 int main(void) {
@@ -340,6 +373,14 @@ int main(void) {
 		KeyCode keycode = XKeysymToKeycode(dpy, XK_1 + i);
 		XGrabKey(dpy, keycode, MODKEY, root, True, GrabModeAsync, GrabModeAsync);
 		log_message(stdout, LOG_DEBUG, "Grabbing Mod+%d for desktop %d (keycode: %d)", i + 1, i + 1, keycode);
+	}
+
+	for (unsigned int i = 0; i < LENGTH(keybinds); i++) {
+		KeyCode keycode = XKeysymToKeycode(dpy, keybinds[i].keysym);
+		if (keycode) {
+			XGrabKey(dpy, keycode, keybinds[i].mod, root, True, GrabModeAsync, GrabModeAsync);
+			log_message(stdout, LOG_DEBUG, "Grabbed key: mod=0x%x, keysym=0x%lx", keybinds[i].mod, keybinds[i].keysym);
+		}
 	}
 
 	// Grab keys for window dragging.
@@ -449,6 +490,15 @@ int main(void) {
 						if (desktop != current_desktop) {
 							log_message(stdout, LOG_DEBUG, "Switching to desktop %lu", desktop);
 							switch_desktop(desktop);
+						}
+					} else {
+						for (unsigned int i = 0; i < LENGTH(keybinds); i++) {
+							if (keysym == keybinds[i].keysym && (ev.xkey.state & (Mod1Mask|ControlMask|ShiftMask)) == keybinds[i].mod) {
+								/* Arg arg = {0}; */
+								keybinds[i].func(&keybinds[i].arg);
+								/* keybinds[i].func(); */
+								break;
+							}
 						}
 					}
 				} break;
