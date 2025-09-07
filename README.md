@@ -15,7 +15,16 @@ sudo xbps-install libX11-devel freetype-devel
 ## Compilation
 
 ```sh
+# Build normally without optimizations and without debug symbols.
 CC=clang make
+
+# Builds with debug symbols.
+DEBUG=1 make
+
+# Compile with -On optimizations.
+OPTIMIZE=1 make
+OPTIMIZE=2 make
+OPTIMIZE=3 make
 ```
 
 ## Inspiration

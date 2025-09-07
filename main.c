@@ -275,7 +275,7 @@ void draw_current_time(void) {
 
 	time_t now = time(NULL);
 	struct tm *tm_info = localtime(&now);
-	strftime(text, sizeof(text), "%A %d.%m.%Y %H:%M:%S", tm_info);
+	strftime(text, sizeof(text), time_format, tm_info);
 
 	XftTextExtentsUtf8(dpy, xft_font, (FcChar8 *)text, strlen(text), &extents);
 	/* XClearArea(dpy, root, x, y, extents.width, extents.height, False); */

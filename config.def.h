@@ -4,10 +4,11 @@
 
 #define MODKEY Mod4Mask
 
-static char *font_name = "Berkeley Mono:style=Bold:pixelsize=16:antialias=true:autohint=true";
+static const char *font_name = "Berkeley Mono:style=Bold:pixelsize=16:antialias=true:autohint=true";
 static int border_size = 3;
-static char *active_border_color = "khaki";
-static char *inactive_border_color = "darkgray";
+static const char *active_border_color = "khaki";
+static const char *inactive_border_color = "darkgray";
+static const char *time_format = "%A %d.%m.%Y %H:%M:%S";
 
 static Shortcut shortcuts[] = {
 	/* Mask                 KeySym                    Shell command                                         */

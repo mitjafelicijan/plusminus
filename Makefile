@@ -4,6 +4,14 @@ INCLUDES     := $(shell pkg-config --cflags xft)
 LDFLAGS      := $(shell pkg-config --libs x11 xft)
 DISPLAY_NUM  := 69
 
+ifdef DEBUG
+CFLAGS += -ggdb -DDEBUG
+endif
+
+ifdef OPTIMIZE
+CFLAGS += -O$(OPTIMIZE)
+endif
+
 all: config.h plusminus
 
 plusminus: main.c logging.c functions.c
