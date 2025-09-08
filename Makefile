@@ -2,6 +2,7 @@ CC           ?= cc
 CFLAGS       := -std=c99 -pedantic -Wall -Wextra -Wunused -Wswitch-enum
 INCLUDES     := $(shell pkg-config --cflags xft)
 LDFLAGS      := $(shell pkg-config --libs x11 xft)
+DESTDIR      ?= /usr/local
 DISPLAY_NUM  := 69
 
 ifdef DEBUG
@@ -19,6 +20,9 @@ plusminus: main.c logging.c functions.c
 
 config.h:
 	[ -f config.h ] || cp config.def.h config.h
+
+install: all
+	install -Dm755 plusminus $(DESTDIR)/usr/local/bin/plusminus
 
 virt:
 	Xephyr -screen 1500x1500 :$(DISPLAY_NUM)
