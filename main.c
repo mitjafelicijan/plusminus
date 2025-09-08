@@ -509,6 +509,8 @@ int main(void) {
 	XChangeProperty(dpy, root, _NET_NUMBER_OF_DESKTOPS, XA_CARDINAL, 32, PropModeReplace, (unsigned char *)&number_of_desktops, 1);
 	XChangeProperty(dpy, root, _NET_CURRENT_DESKTOP, XA_CARDINAL, 32, PropModeReplace, (unsigned char *)&current_desktop, 1);
 
+	XUngrabButton(dpy, AnyButton, AnyModifier, root);
+
 	// Grab keys for keybinds.
 	for (unsigned int i = 0; i < LENGTH(keybinds); i++) {
 		KeyCode keycode = XKeysymToKeycode(dpy, keybinds[i].keysym);
@@ -530,10 +532,6 @@ int main(void) {
 	// Grab keys for window dragging (with MODKEY).
 	XGrabButton(dpy, 1, MODKEY, root, True, ButtonPressMask|ButtonReleaseMask|PointerMotionMask, GrabModeAsync, GrabModeAsync, None, None);
 	XGrabButton(dpy, 3, MODKEY, root, True, ButtonPressMask|ButtonReleaseMask|PointerMotionMask, GrabModeAsync, GrabModeAsync, None, None);
-
-	// Grab keys for window activation (without MODKEY).
-	XGrabButton(dpy, 1, 0, root, True, ButtonPressMask|ButtonReleaseMask, GrabModeAsync, GrabModeAsync, None, None);
-	XGrabButton(dpy, 3, 0, root, True, ButtonPressMask|ButtonReleaseMask, GrabModeAsync, GrabModeAsync, None, None);
 
 	// Prepare border colors.
 	Colormap cmap = DefaultColormap(dpy, screen);
@@ -712,24 +710,16 @@ int main(void) {
 			case ButtonPress:
 				{
 					if (ev.xbutton.subwindow != None) {
-						XGetWindowAttributes(dpy, ev.xbutton.subwindow, &attr);
-						start = ev.xbutton;
+						if (ev.xbutton.state & MODKEY) {
+							XGetWindowAttributes(dpy, ev.xbutton.subwindow, &attr);
+							start = ev.xbutton;
 
-						// Always raise and activate the window when clicked, regardless of current state
-						// This ensures that clicking on any window will bring it to the front and make it active
-						if (ev.xbutton.subwindow != active_window) {
-							XRaiseWindow(dpy, start.subwindow);
+							// Raise and focus the window
+							XRaiseWindow(dpy, ev.xbutton.subwindow);
 							XSetInputFocus(dpy, ev.xbutton.subwindow, RevertToPointerRoot, CurrentTime);
 							update_borders(ev.xbutton.subwindow);
-							log_message(stdout, LOG_DEBUG, "Raised and activated window 0x%lx", ev.xbutton.subwindow);
-						} else {
-							// Window is already active, just ensure it's raised
-							XRaiseWindow(dpy, start.subwindow);
-							log_message(stdout, LOG_DEBUG, "Raised already active window 0x%lx", ev.xbutton.subwindow);
-						}
 
-						// Only change cursor and enable dragging if MODKEY is held
-						if (ev.xbutton.state & MODKEY) {
+							// Set appropriate cursor for dragging
 							if (start.button == 1) {
 								log_message(stdout, LOG_DEBUG, "Setting cursor to move");
 								XDefineCursor(dpy, start.subwindow, cursor_move);
@@ -737,9 +727,7 @@ int main(void) {
 								log_message(stdout, LOG_DEBUG, "Setting cursor to resize");
 								XDefineCursor(dpy, start.subwindow, cursor_resize);
 							}
-						} else {
-							// For clicks without MODKEY, don't set up dragging
-							start.subwindow = None;
+							log_message(stdout, LOG_DEBUG, "MODKEY click on window 0x%lx - dragging enabled", ev.xbutton.subwindow);
 						}
 						XFlush(dpy);
 					}
@@ -748,14 +736,12 @@ int main(void) {
 			case ButtonRelease:
 				{
 					if (start.subwindow != None) {
-						// Only restore cursor if we changed it (MODKEY was held during press)
+						// MODKEY drag release: restore cursor
 						if (start.state & MODKEY) {
-							// Restore default cursor on the client window.
 							XDefineCursor(dpy, start.subwindow, None);
-							XFlush(dpy);
 						}
+						XFlush(dpy);
 					}
-					start.subwindow = None;
 				} break;
 
 			case MotionNotify:

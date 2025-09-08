@@ -9,7 +9,7 @@ static int border_size = 3;
 static const char *active_border_color = "khaki";
 static const char *inactive_border_color = "darkgray";
 static const char *time_format = "%A %d.%m.%Y %H:%M:%S";
-static bool follow_focus = true;
+static bool follow_focus = false;
 
 static Shortcut shortcuts[] = {
 	/* Mask                 KeySym                    Shell command                                         */
