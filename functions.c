@@ -247,3 +247,93 @@ void window_hmaximize(const Arg *arg) {
 
 	log_message(stdout, LOG_DEBUG, "Horizontally maximized window 0x%lx to width %d", active_window, new_width);
 }
+
+void window_snap_up(const Arg *arg) {
+	(void)arg;
+
+	if (active_window == None || !window_exists(active_window)) {
+		log_message(stdout, LOG_DEBUG, "No active window to snap up");
+		return;
+	}
+
+	XWindowAttributes attr;
+	if (!XGetWindowAttributes(dpy, active_window, &attr)) {
+		log_message(stdout, LOG_DEBUG, "Failed to get window attributes for 0x%lx", active_window);
+		return;
+	}
+
+	// Move window to top edge (y = 0)
+	XMoveWindow(dpy, active_window, attr.x, 0);
+	XFlush(dpy);
+
+	log_message(stdout, LOG_DEBUG, "Snapped window 0x%lx to top edge", active_window);
+}
+
+void window_snap_down(const Arg *arg) {
+	(void)arg;
+
+	if (active_window == None || !window_exists(active_window)) {
+		log_message(stdout, LOG_DEBUG, "No active window to snap down");
+		return;
+	}
+
+	XWindowAttributes attr;
+	if (!XGetWindowAttributes(dpy, active_window, &attr)) {
+		log_message(stdout, LOG_DEBUG, "Failed to get window attributes for 0x%lx", active_window);
+		return;
+	}
+
+	// Get screen height and move window to bottom edge
+	int screen_height = DisplayHeight(dpy, DefaultScreen(dpy));
+	int new_y = screen_height - attr.height - (2 * attr.border_width);
+
+	XMoveWindow(dpy, active_window, attr.x, new_y);
+	XFlush(dpy);
+
+	log_message(stdout, LOG_DEBUG, "Snapped window 0x%lx to bottom edge at y=%d", active_window, new_y);
+}
+
+void window_snap_right(const Arg *arg) {
+	(void)arg;
+
+	if (active_window == None || !window_exists(active_window)) {
+		log_message(stdout, LOG_DEBUG, "No active window to snap right");
+		return;
+	}
+
+	XWindowAttributes attr;
+	if (!XGetWindowAttributes(dpy, active_window, &attr)) {
+		log_message(stdout, LOG_DEBUG, "Failed to get window attributes for 0x%lx", active_window);
+		return;
+	}
+
+	// Get screen width and move window to right edge
+	int screen_width = DisplayWidth(dpy, DefaultScreen(dpy));
+	int new_x = screen_width - attr.width - (2 * attr.border_width);
+
+	XMoveWindow(dpy, active_window, new_x, attr.y);
+	XFlush(dpy);
+
+	log_message(stdout, LOG_DEBUG, "Snapped window 0x%lx to right edge at x=%d", active_window, new_x);
+}
+
+void window_snap_left(const Arg *arg) {
+	(void)arg;
+
+	if (active_window == None || !window_exists(active_window)) {
+		log_message(stdout, LOG_DEBUG, "No active window to snap left");
+		return;
+	}
+
+	XWindowAttributes attr;
+	if (!XGetWindowAttributes(dpy, active_window, &attr)) {
+		log_message(stdout, LOG_DEBUG, "Failed to get window attributes for 0x%lx", active_window);
+		return;
+	}
+
+	// Move window to left edge (x = 0)
+	XMoveWindow(dpy, active_window, 0, attr.y);
+	XFlush(dpy);
+
+	log_message(stdout, LOG_DEBUG, "Snapped window 0x%lx to left edge", active_window);
+}

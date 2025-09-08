@@ -84,6 +84,10 @@ void kill_window(const Arg *arg);
 void fullscreen(const Arg *arg);
 void window_vmaximize(const Arg *arg);
 void window_hmaximize(const Arg *arg);
+void window_snap_up(const Arg *arg);
+void window_snap_down(const Arg *arg);
+void window_snap_right(const Arg *arg);
+void window_snap_left(const Arg *arg);
 
 // Helper functions for maximize state management
 int find_vmaximize_window(Window window);

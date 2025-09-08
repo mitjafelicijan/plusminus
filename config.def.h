@@ -49,5 +49,9 @@ static Keybinds keybinds[] = {
 	{ MODKEY,               XK_f,       fullscreen,          { 0 }        },
 	{ MODKEY,               XK_x,       window_hmaximize,    { 0 }        },
 	{ MODKEY,               XK_z,       window_vmaximize,    { 0 }        },
+	{ MODKEY | ControlMask, XK_Up,      window_snap_up,      { 0 }        },
+	{ MODKEY | ControlMask, XK_Down,    window_snap_down,    { 0 }        },
+	{ MODKEY | ControlMask, XK_Right,   window_snap_right,   { 0 }        },
+	{ MODKEY | ControlMask, XK_Left,    window_snap_left,    { 0 }        },
 	{ MODKEY,               XK_q,       kill_window,         { 0 }        },
 };
