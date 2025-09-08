@@ -25,6 +25,17 @@ static XButtonEvent start;
 static XEvent ev;
 static int screen;
 
+// Fullscreen state tracking
+static Window fullscreen_window = None;
+static int fullscreen_x, fullscreen_y, fullscreen_width, fullscreen_height;
+
+// Maximize state tracking for multiple windows
+MaximizeState vmaximize_windows[MAX_MAXIMIZE_WINDOWS];
+int vmaximize_count = 0;
+
+MaximizeState hmaximize_windows[MAX_MAXIMIZE_WINDOWS];
+int hmaximize_count = 0;
+
 unsigned long number_of_desktops = 9;
 static unsigned long current_desktop = 1;
 unsigned long active_border;
@@ -45,6 +56,9 @@ static Atom _NET_WM_DESKTOP;
 static Atom _NET_CURRENT_DESKTOP;
 static Atom _NET_NUMBER_OF_DESKTOPS;
 static Atom _NET_CLIENT_LIST;
+static Atom _NET_WM_STATE;
+static Atom _NET_WM_STATE_FULLSCREEN;
+static Atom _NET_ACTIVE_WINDOW;
 
 static int ignore_x_error(Display *dpy, XErrorEvent *err) {
 	(void)dpy;
@@ -88,6 +102,56 @@ int window_exists(Window w) {
 	return s != 0;
 }
 
+static void set_active_window_property(Window window) {
+	if (window != None) {
+		XChangeProperty(dpy, root, _NET_ACTIVE_WINDOW, XA_WINDOW, 32, PropModeReplace, (unsigned char *)&window, 1);
+	} else {
+		XDeleteProperty(dpy, root, _NET_ACTIVE_WINDOW);
+	}
+	XFlush(dpy);
+}
+
+// Helper functions for maximize state management
+int find_vmaximize_window(Window window) {
+	for (int i = 0; i < vmaximize_count; i++) {
+		if (vmaximize_windows[i].window == window) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+int find_hmaximize_window(Window window) {
+	for (int i = 0; i < hmaximize_count; i++) {
+		if (hmaximize_windows[i].window == window) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+void remove_vmaximize_window(Window window) {
+	int index = find_vmaximize_window(window);
+	if (index >= 0) {
+		// Shift remaining elements left
+		for (int i = index; i < vmaximize_count - 1; i++) {
+			vmaximize_windows[i] = vmaximize_windows[i + 1];
+		}
+		vmaximize_count--;
+	}
+}
+
+void remove_hmaximize_window(Window window) {
+	int index = find_hmaximize_window(window);
+	if (index >= 0) {
+		// Shift remaining elements left
+		for (int i = index; i < hmaximize_count - 1; i++) {
+			hmaximize_windows[i] = hmaximize_windows[i + 1];
+		}
+		hmaximize_count--;
+	}
+}
+
 void update_borders(Window new_active) {
 	if (active_window != None && active_window != new_active) {
 		if (window_exists(active_window)) {
@@ -104,6 +168,7 @@ void update_borders(Window new_active) {
 	}
 
 	active_window = new_active;
+	set_active_window_property(active_window);
 }
 
 void add_to_client_list(Window window) {
@@ -209,6 +274,7 @@ void switch_desktop(unsigned long desktop) {
 	unsigned char *data = NULL;
 
 	// Get list of client windows.
+	Window first_window_on_desktop = None;
 	if (XGetWindowProperty(dpy, root, _NET_CLIENT_LIST, 0, 1024, False, XA_WINDOW, &type, &format, &nitems, &bytes_after, &data) == Success) {
 		if (type == XA_WINDOW && format == 32) {
 			Window *windows = (Window *)data;
@@ -227,6 +293,10 @@ void switch_desktop(unsigned long desktop) {
 				if (window_desktop == current_desktop) {
 					log_message(stdout, LOG_DEBUG, "Mapping window 0x%lx", w);
 					XMapWindow(dpy, w);
+					// Remember the first window on this desktop for activation
+					if (first_window_on_desktop == None) {
+						first_window_on_desktop = w;
+					}
 				} else {
 					log_message(stdout, LOG_DEBUG, "Unmapping window 0x%lx", w);
 					XUnmapWindow(dpy, w);
@@ -238,11 +308,21 @@ void switch_desktop(unsigned long desktop) {
 		if (data) XFree(data);
 	}
 
+	// Clear the old active window
 	if (active_window != None) {
 		if (window_exists(active_window)) {
 			XSetWindowBorder(dpy, active_window, inactive_border);
 		}
 		active_window = None;
+		set_active_window_property(active_window);
+	}
+
+	// Activate the first window on the new desktop
+	if (first_window_on_desktop != None) {
+		XRaiseWindow(dpy, first_window_on_desktop);
+		XSetInputFocus(dpy, first_window_on_desktop, RevertToPointerRoot, CurrentTime);
+		update_borders(first_window_on_desktop);
+		log_message(stdout, LOG_DEBUG, "Activated first window 0x%lx on desktop %lu", first_window_on_desktop, desktop);
 	}
 
 	log_message(stdout, LOG_DEBUG, "Switched to desktop %lu", desktop);
@@ -311,6 +391,76 @@ static void* expose_timer_thread(void* arg) {
 	return NULL;
 }
 
+static int is_fullscreen(Window window) {
+	Atom type;
+	int format;
+	unsigned long nitems, bytes_after;
+	unsigned char *data = NULL;
+	int fullscreen = 0;
+
+	if (XGetWindowProperty(dpy, window, _NET_WM_STATE, 0, 1024, False, XA_ATOM, &type, &format, &nitems, &bytes_after, &data) == Success) {
+		if (data && type == XA_ATOM && format == 32) {
+			Atom *states = (Atom *)data;
+			for (unsigned long i = 0; i < nitems; i++) {
+				if (states[i] == _NET_WM_STATE_FULLSCREEN) {
+					fullscreen = 1;
+					break;
+				}
+			}
+		}
+		if (data) XFree(data);
+	}
+
+	return fullscreen;
+}
+
+static void set_fullscreen(Window window, int fullscreen) {
+	if (fullscreen) {
+		// Store current window geometry
+		XWindowAttributes attr;
+		XGetWindowAttributes(dpy, window, &attr);
+		fullscreen_x = attr.x;
+		fullscreen_y = attr.y;
+		fullscreen_width = attr.width;
+		fullscreen_height = attr.height;
+
+		// Remove border and move to fullscreen
+		XSetWindowBorderWidth(dpy, window, 0);
+		XMoveResizeWindow(dpy, window, 0, 0, DisplayWidth(dpy, screen), DisplayHeight(dpy, screen));
+
+		// Set fullscreen state
+		XChangeProperty(dpy, window, _NET_WM_STATE, XA_ATOM, 32, PropModeReplace, (unsigned char *)&_NET_WM_STATE_FULLSCREEN, 1);
+		fullscreen_window = window;
+
+		log_message(stdout, LOG_DEBUG, "Window 0x%lx set to fullscreen", window);
+	} else {
+		// Restore window geometry
+		XSetWindowBorderWidth(dpy, window, border_size);
+		XMoveResizeWindow(dpy, window, fullscreen_x, fullscreen_y, fullscreen_width, fullscreen_height);
+
+		// Remove fullscreen state
+		XDeleteProperty(dpy, window, _NET_WM_STATE);
+		fullscreen_window = None;
+
+		log_message(stdout, LOG_DEBUG, "Window 0x%lx restored from fullscreen", window);
+	}
+
+	XFlush(dpy);
+}
+
+static void toggle_fullscreen(Window window) {
+	if (window == None || !window_exists(window)) {
+		log_message(stdout, LOG_DEBUG, "No valid window to toggle fullscreen");
+		return;
+	}
+
+	if (is_fullscreen(window)) {
+		set_fullscreen(window, 0);
+	} else {
+		set_fullscreen(window, 1);
+	}
+}
+
 
 int main(void) {
 	set_log_level(get_log_level_from_env());
@@ -350,6 +500,9 @@ int main(void) {
 	_NET_CURRENT_DESKTOP = XInternAtom(dpy, "_NET_CURRENT_DESKTOP", False);
 	_NET_NUMBER_OF_DESKTOPS = XInternAtom(dpy, "_NET_NUMBER_OF_DESKTOPS", False);
 	_NET_CLIENT_LIST = XInternAtom(dpy, "_NET_CLIENT_LIST", False);
+	_NET_WM_STATE = XInternAtom(dpy, "_NET_WM_STATE", False);
+	_NET_WM_STATE_FULLSCREEN = XInternAtom(dpy, "_NET_WM_STATE_FULLSCREEN", False);
+	_NET_ACTIVE_WINDOW = XInternAtom(dpy, "_NET_ACTIVE_WINDOW", False);
 
 	// Set number of desktops and current desktop.
 	XChangeProperty(dpy, root, _NET_NUMBER_OF_DESKTOPS, XA_CARDINAL, 32, PropModeReplace, (unsigned char *)&number_of_desktops, 1);
@@ -373,9 +526,13 @@ int main(void) {
 		}
 	}
 
-	// Grab keys for window dragging.
+	// Grab keys for window dragging (with MODKEY).
 	XGrabButton(dpy, 1, MODKEY, root, True, ButtonPressMask|ButtonReleaseMask|PointerMotionMask, GrabModeAsync, GrabModeAsync, None, None);
 	XGrabButton(dpy, 3, MODKEY, root, True, ButtonPressMask|ButtonReleaseMask|PointerMotionMask, GrabModeAsync, GrabModeAsync, None, None);
+
+	// Grab keys for window activation (without MODKEY).
+	XGrabButton(dpy, 1, 0, root, True, ButtonPressMask|ButtonReleaseMask, GrabModeAsync, GrabModeAsync, None, None);
+	XGrabButton(dpy, 3, 0, root, True, ButtonPressMask|ButtonReleaseMask, GrabModeAsync, GrabModeAsync, None, None);
 
 	// Prepare border colors.
 	Colormap cmap = DefaultColormap(dpy, screen);
@@ -444,6 +601,12 @@ int main(void) {
 					XMapWindow(dpy, window);
 					log_message(stdout, LOG_DEBUG, "Window 0x%lx mapped", window);
 
+					// Make the new window active and focused
+					XRaiseWindow(dpy, window);
+					XSetInputFocus(dpy, window, RevertToPointerRoot, CurrentTime);
+					update_borders(window);
+					log_message(stdout, LOG_DEBUG, "Window 0x%lx raised and focused", window);
+
 					add_to_client_list(window);
 					set_window_desktop(window, current_desktop);
 				} break;
@@ -453,6 +616,37 @@ int main(void) {
 					if (ev.xdestroywindow.window == active_window) {
 						update_borders(None);
 						log_message(stdout, LOG_DEBUG, "Window 0x%lx destroyed", ev.xdestroywindow.window);
+					}
+
+					if (ev.xdestroywindow.window == fullscreen_window) {
+						fullscreen_window = None;
+						log_message(stdout, LOG_DEBUG, "Fullscreen window 0x%lx destroyed", ev.xdestroywindow.window);
+					}
+
+					// Remove from vertical maximize tracking
+					for (int i = 0; i < vmaximize_count; i++) {
+						if (vmaximize_windows[i].window == ev.xdestroywindow.window) {
+							// Shift remaining elements left
+							for (int j = i; j < vmaximize_count - 1; j++) {
+								vmaximize_windows[j] = vmaximize_windows[j + 1];
+							}
+							vmaximize_count--;
+							log_message(stdout, LOG_DEBUG, "Vertically maximized window 0x%lx destroyed", ev.xdestroywindow.window);
+							break;
+						}
+					}
+
+					// Remove from horizontal maximize tracking
+					for (int i = 0; i < hmaximize_count; i++) {
+						if (hmaximize_windows[i].window == ev.xdestroywindow.window) {
+							// Shift remaining elements left
+							for (int j = i; j < hmaximize_count - 1; j++) {
+								hmaximize_windows[j] = hmaximize_windows[j + 1];
+							}
+							hmaximize_count--;
+							log_message(stdout, LOG_DEBUG, "Horizontally maximized window 0x%lx destroyed", ev.xdestroywindow.window);
+							break;
+						}
 					}
 
 					remove_from_client_list(ev.xdestroywindow.window);
@@ -481,14 +675,14 @@ int main(void) {
 
 			case EnterNotify:
 				{
-					Window entered_window = ev.xcrossing.window;
-					if (entered_window != root && ev.xcrossing.mode == NotifyNormal) {
-						if (entered_window != None && entered_window != active_window) {
-							XRaiseWindow(dpy, entered_window);
-							XSetInputFocus(dpy, entered_window, RevertToPointerRoot, CurrentTime);
-							update_borders(entered_window);
-						}
-					}
+					// Window entered_window = ev.xcrossing.window;
+					// if (entered_window != root && ev.xcrossing.mode == NotifyNormal) {
+					// 	if (entered_window != None && entered_window != active_window) {
+					// 		XRaiseWindow(dpy, entered_window);
+					// 		XSetInputFocus(dpy, entered_window, RevertToPointerRoot, CurrentTime);
+					// 		update_borders(entered_window);
+					// 	}
+					// }
 				} break;
 
 			case KeyPress:
@@ -518,11 +712,20 @@ int main(void) {
 						XGetWindowAttributes(dpy, ev.xbutton.subwindow, &attr);
 						start = ev.xbutton;
 
-						XRaiseWindow(dpy, start.subwindow);
-						XSetInputFocus(dpy, ev.xbutton.subwindow, RevertToPointerRoot, CurrentTime);
-						update_borders(ev.xbutton.subwindow);
+						// Always raise and activate the window when clicked, regardless of current state
+						// This ensures that clicking on any window will bring it to the front and make it active
+						if (ev.xbutton.subwindow != active_window) {
+							XRaiseWindow(dpy, start.subwindow);
+							XSetInputFocus(dpy, ev.xbutton.subwindow, RevertToPointerRoot, CurrentTime);
+							update_borders(ev.xbutton.subwindow);
+							log_message(stdout, LOG_DEBUG, "Raised and activated window 0x%lx", ev.xbutton.subwindow);
+						} else {
+							// Window is already active, just ensure it's raised
+							XRaiseWindow(dpy, start.subwindow);
+							log_message(stdout, LOG_DEBUG, "Raised already active window 0x%lx", ev.xbutton.subwindow);
+						}
 
-						// Only change cursor if we're actually dragging (MODKEY is held)
+						// Only change cursor and enable dragging if MODKEY is held
 						if (ev.xbutton.state & MODKEY) {
 							if (start.button == 1) {
 								log_message(stdout, LOG_DEBUG, "Setting cursor to move");
@@ -531,6 +734,9 @@ int main(void) {
 								log_message(stdout, LOG_DEBUG, "Setting cursor to resize");
 								XDefineCursor(dpy, start.subwindow, cursor_resize);
 							}
+						} else {
+							// For clicks without MODKEY, don't set up dragging
+							start.subwindow = None;
 						}
 						XFlush(dpy);
 					}
@@ -562,6 +768,45 @@ int main(void) {
 								MAX(50, attr.height + (start.button == 3 ? ydiff : 0)));
 					}
 				} break;
+
+			case ClientMessage:
+				{
+					if (ev.xclient.message_type == _NET_WM_STATE) {
+						Atom action = ev.xclient.data.l[0];
+						Atom state = ev.xclient.data.l[1];
+						Window window = ev.xclient.window;
+
+						if (state == _NET_WM_STATE_FULLSCREEN) {
+							if (action == 1) { // _NET_WM_STATE_ADD
+								set_fullscreen(window, 1);
+							} else if (action == 0) { // _NET_WM_STATE_REMOVE
+								set_fullscreen(window, 0);
+							} else if (action == 2) { // _NET_WM_STATE_TOGGLE
+								toggle_fullscreen(window);
+							}
+						}
+					} else if (ev.xclient.message_type == _NET_ACTIVE_WINDOW) {
+						Window window = ev.xclient.data.l[0];
+						if (window != None && window_exists(window)) {
+							// Check if window is on current desktop
+							unsigned long window_desktop = get_window_desktop(window);
+							if (window_desktop == current_desktop) {
+								XRaiseWindow(dpy, window);
+								XSetInputFocus(dpy, window, RevertToPointerRoot, CurrentTime);
+								update_borders(window);
+								log_message(stdout, LOG_DEBUG, "Activated window 0x%lx via _NET_ACTIVE_WINDOW", window);
+							} else {
+								// Switch to the window's desktop first
+								switch_desktop(window_desktop);
+								XRaiseWindow(dpy, window);
+								XSetInputFocus(dpy, window, RevertToPointerRoot, CurrentTime);
+								update_borders(window);
+								log_message(stdout, LOG_DEBUG, "Activated window 0x%lx on desktop %lu via _NET_ACTIVE_WINDOW", window, window_desktop);
+							}
+						}
+					}
+				}
+				break;
 
 			case Expose:
 				if (ev.xexpose.window == root) {

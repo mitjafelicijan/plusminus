@@ -21,4 +21,4 @@ config.h:
 	[ -f config.h ] || cp config.def.h config.h
 
 virt:
-	Xephyr -screen 1000x1000 :$(DISPLAY_NUM)
+	Xephyr -screen 1500x1500 :$(DISPLAY_NUM)

@@ -48,6 +48,19 @@ extern unsigned long number_of_desktops;
 extern unsigned long active_border;
 extern unsigned long inactive_border;
 
+// Maximize state tracking
+#define MAX_MAXIMIZE_WINDOWS 32
+
+typedef struct {
+	Window window;
+	int x, y, width, height;
+} MaximizeState;
+
+extern MaximizeState vmaximize_windows[MAX_MAXIMIZE_WINDOWS];
+extern int vmaximize_count;
+extern MaximizeState hmaximize_windows[MAX_MAXIMIZE_WINDOWS];
+extern int hmaximize_count;
+
 // External functions.
 int window_exists(Window w);
 unsigned long get_window_desktop(Window w);
@@ -68,5 +81,14 @@ void resize_window_y(const Arg *arg);
 void switch_to_desktop(const Arg *arg);
 void move_to_desktop(const Arg *arg);
 void kill_window(const Arg *arg);
+void fullscreen(const Arg *arg);
+void window_vmaximize(const Arg *arg);
+void window_hmaximize(const Arg *arg);
+
+// Helper functions for maximize state management
+int find_vmaximize_window(Window window);
+int find_hmaximize_window(Window window);
+void remove_vmaximize_window(Window window);
+void remove_hmaximize_window(Window window);
 
 #endif // PLUSMINUS_H
