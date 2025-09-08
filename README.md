@@ -298,6 +298,7 @@ static int border_size = 3;                // Window border width in pixels
 static const char *active_border_color = "khaki";      // Active window border color
 static const char *inactive_border_color = "darkgray"; // Inactive window border color
 static const char *time_format = "%A %d.%m.%Y %H:%M:%S"; // Time display format
+static bool follow_focus = false;          // Enable auto-focus on mouse enter (true/false)
 ```
 
 ### Common Configuration Tasks
@@ -323,6 +324,17 @@ static const char *inactive_border_color = "blue";
 // Different font
 static const char *font_name = "DejaVu Sans Mono:pixelsize=14";
 ```
+
+#### Auto-Focus Behavior
+```c
+// Enable auto-focus when mouse enters a window
+static bool follow_focus = true;
+
+// Disable auto-focus (default behavior)
+static bool follow_focus = false;
+```
+
+When `follow_focus` is enabled, windows will automatically gain focus and be raised when you move your mouse over them. This can be convenient but may be distracting if you prefer manual window activation.
 
 #### Adding Custom Applications
 ```c

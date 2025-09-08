@@ -5,6 +5,7 @@
 #include <pthread.h>
 #include <unistd.h>
 #include <sys/wait.h>
+#include <stdbool.h>
 
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
@@ -675,14 +676,16 @@ int main(void) {
 
 			case EnterNotify:
 				{
-					// Window entered_window = ev.xcrossing.window;
-					// if (entered_window != root && ev.xcrossing.mode == NotifyNormal) {
-					// 	if (entered_window != None && entered_window != active_window) {
-					// 		XRaiseWindow(dpy, entered_window);
-					// 		XSetInputFocus(dpy, entered_window, RevertToPointerRoot, CurrentTime);
-					// 		update_borders(entered_window);
-					// 	}
-					// }
+					if (follow_focus) {
+						Window entered_window = ev.xcrossing.window;
+						if (entered_window != root && ev.xcrossing.mode == NotifyNormal) {
+							if (entered_window != None && entered_window != active_window) {
+								XRaiseWindow(dpy, entered_window);
+								XSetInputFocus(dpy, entered_window, RevertToPointerRoot, CurrentTime);
+								update_borders(entered_window);
+							}
+						}
+					}
 				} break;
 
 			case KeyPress:
