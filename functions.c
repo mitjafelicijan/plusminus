@@ -102,7 +102,6 @@ void fullscreen(const Arg *arg) {
 		return;
 	}
 
-	// Send a client message to request fullscreen toggle
 	XEvent event;
 	memset(&event, 0, sizeof(event));
 	event.type = ClientMessage;
@@ -128,19 +127,26 @@ void window_vmaximize(const Arg *arg) {
 		return;
 	}
 
-	// Check if this window is already vertically maximized
 	int index = find_vmaximize_window(active_window);
 	if (index >= 0) {
-		// Restore original dimensions
 		MaximizeState *state = &vmaximize_windows[index];
-		XMoveResizeWindow(dpy, active_window, state->x, state->y, state->width, state->height);
+		XWindowAttributes attr;
+		if (XGetWindowAttributes(dpy, active_window, &attr)) {
+			// Ensure the restored size is at least the minimum size
+			int restore_width = MAX(50, state->width);
+			int restore_height = MAX(50, state->height);
+			XMoveResizeWindow(dpy, active_window, state->x, state->y, restore_width, restore_height);
+		} else {
+			// Fallback if we can't get attributes
+			XMoveResizeWindow(dpy, active_window, state->x, state->y, state->width, state->height);
+		}
 		XFlush(dpy);
 		remove_vmaximize_window(active_window);
-		log_message(stdout, LOG_DEBUG, "Restored window 0x%lx from vertical maximize", active_window);
+		log_message(stdout, LOG_DEBUG, "Restored window 0x%lx from vertical maximize to %dx%d at (%d,%d)", 
+			active_window, state->width, state->height, state->x, state->y);
 		return;
 	}
 
-	// Check if we have space for another maximized window
 	if (vmaximize_count >= MAX_MAXIMIZE_WINDOWS) {
 		log_message(stdout, LOG_DEBUG, "Maximum number of vertically maximized windows reached");
 		return;
@@ -152,7 +158,6 @@ void window_vmaximize(const Arg *arg) {
 		return;
 	}
 
-	// Store original dimensions
 	MaximizeState *state = &vmaximize_windows[vmaximize_count];
 	state->window = active_window;
 	state->x = attr.x;
@@ -161,19 +166,16 @@ void window_vmaximize(const Arg *arg) {
 	state->height = attr.height;
 	vmaximize_count++;
 
-	// Get screen dimensions
+	log_message(stdout, LOG_DEBUG, "Saved window 0x%lx state: %dx%d at (%d,%d) for vertical maximize", 
+		active_window, state->width, state->height, state->x, state->y);
+
 	int screen_height = DisplayHeight(dpy, DefaultScreen(dpy));
-
-	// Calculate new dimensions - keep width, maximize height
-	// Account for border size
 	int border_width = attr.border_width;
-
 	int new_x = attr.x;
 	int new_y = 0;
 	int new_width = attr.width;
 	int new_height = screen_height - (2 * border_width);
 
-	// Ensure minimum height
 	if (new_height < 50) {
 		new_height = 50;
 	}
@@ -192,19 +194,27 @@ void window_hmaximize(const Arg *arg) {
 		return;
 	}
 
-	// Check if this window is already horizontally maximized
 	int index = find_hmaximize_window(active_window);
 	if (index >= 0) {
-		// Restore original dimensions
 		MaximizeState *state = &hmaximize_windows[index];
-		XMoveResizeWindow(dpy, active_window, state->x, state->y, state->width, state->height);
+		XWindowAttributes attr;
+		if (XGetWindowAttributes(dpy, active_window, &attr)) {
+			// Ensure the restored size is at least the minimum size
+			int restore_width = MAX(50, state->width);
+			int restore_height = MAX(50, state->height);
+			XMoveResizeWindow(dpy, active_window, state->x, state->y, restore_width, restore_height);
+		} else {
+			// Fallback if we can't get attributes
+			XMoveResizeWindow(dpy, active_window, state->x, state->y, state->width, state->height);
+		}
 		XFlush(dpy);
 		remove_hmaximize_window(active_window);
-		log_message(stdout, LOG_DEBUG, "Restored window 0x%lx from horizontal maximize", active_window);
+		log_message(stdout, LOG_DEBUG, "Restored window 0x%lx from horizontal maximize to %dx%d at (%d,%d)", 
+			active_window, state->width, state->height, state->x, state->y);
 		return;
 	}
 
-	// Check if we have space for another maximized window
+	// Check if we have space for another maximized window.
 	if (hmaximize_count >= MAX_MAXIMIZE_WINDOWS) {
 		log_message(stdout, LOG_DEBUG, "Maximum number of horizontally maximized windows reached");
 		return;
@@ -216,7 +226,6 @@ void window_hmaximize(const Arg *arg) {
 		return;
 	}
 
-	// Store original dimensions
 	MaximizeState *state = &hmaximize_windows[hmaximize_count];
 	state->window = active_window;
 	state->x = attr.x;
@@ -225,19 +234,16 @@ void window_hmaximize(const Arg *arg) {
 	state->height = attr.height;
 	hmaximize_count++;
 
-	// Get screen dimensions
+	log_message(stdout, LOG_DEBUG, "Saved window 0x%lx state: %dx%d at (%d,%d) for horizontal maximize", 
+		active_window, state->width, state->height, state->x, state->y);
+
 	int screen_width = DisplayWidth(dpy, DefaultScreen(dpy));
-
-	// Calculate new dimensions - keep height, maximize width
-	// Account for border size
 	int border_width = attr.border_width;
-
 	int new_x = 0;
 	int new_y = attr.y;
 	int new_width = screen_width - (2 * border_width);
 	int new_height = attr.height;
 
-	// Ensure minimum width
 	if (new_width < 50) {
 		new_width = 50;
 	}
@@ -262,7 +268,6 @@ void window_snap_up(const Arg *arg) {
 		return;
 	}
 
-	// Move window to top edge (y = 0)
 	XMoveWindow(dpy, active_window, attr.x, 0);
 	XFlush(dpy);
 
@@ -283,7 +288,6 @@ void window_snap_down(const Arg *arg) {
 		return;
 	}
 
-	// Get screen height and move window to bottom edge
 	int screen_height = DisplayHeight(dpy, DefaultScreen(dpy));
 	int new_y = screen_height - attr.height - (2 * attr.border_width);
 
@@ -307,7 +311,6 @@ void window_snap_right(const Arg *arg) {
 		return;
 	}
 
-	// Get screen width and move window to right edge
 	int screen_width = DisplayWidth(dpy, DefaultScreen(dpy));
 	int new_x = screen_width - attr.width - (2 * attr.border_width);
 
@@ -331,9 +334,33 @@ void window_snap_left(const Arg *arg) {
 		return;
 	}
 
-	// Move window to left edge (x = 0)
 	XMoveWindow(dpy, active_window, 0, attr.y);
 	XFlush(dpy);
 
 	log_message(stdout, LOG_DEBUG, "Snapped window 0x%lx to left edge", active_window);
+}
+
+void sticky(const Arg *arg) {
+	(void)arg;
+
+	if (active_window == None || !window_exists(active_window)) {
+		log_message(stdout, LOG_DEBUG, "No active window to toggle sticky");
+		return;
+	}
+
+	unsigned long window_desktop = get_window_desktop(active_window);
+
+	if (window_desktop == 0) {
+		// Window is currently sticky (desktop 0), make it non-sticky.
+		set_window_desktop(active_window, current_desktop);
+		XSetWindowBorder(dpy, active_window, active_border);
+		log_message(stdout, LOG_DEBUG, "Removed window 0x%lx from sticky (moved to desktop %lu)", active_window, current_desktop);
+	} else {
+		// Window is not sticky, make it sticky.
+		set_window_desktop(active_window, 0);
+		XSetWindowBorder(dpy, active_window, sticky_active_border);
+		log_message(stdout, LOG_DEBUG, "Made window 0x%lx sticky (desktop 0)", active_window);
+	}
+
+	XFlush(dpy);
 }

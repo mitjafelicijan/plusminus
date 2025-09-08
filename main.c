@@ -26,11 +26,10 @@ static XButtonEvent start;
 static XEvent ev;
 static int screen;
 
-// Fullscreen state tracking
+// Fullscreen state tracking.
 static Window fullscreen_window = None;
 static int fullscreen_x, fullscreen_y, fullscreen_width, fullscreen_height;
 
-// Maximize state tracking for multiple windows
 MaximizeState vmaximize_windows[MAX_MAXIMIZE_WINDOWS];
 int vmaximize_count = 0;
 
@@ -38,9 +37,11 @@ MaximizeState hmaximize_windows[MAX_MAXIMIZE_WINDOWS];
 int hmaximize_count = 0;
 
 unsigned long number_of_desktops = 9;
-static unsigned long current_desktop = 1;
+unsigned long current_desktop = 1;
 unsigned long active_border;
 unsigned long inactive_border;
+unsigned long sticky_active_border;
+unsigned long sticky_inactive_border;
 
 static Cursor cursor_default;
 static Cursor cursor_move;
@@ -112,7 +113,7 @@ static void set_active_window_property(Window window) {
 	XFlush(dpy);
 }
 
-// Helper functions for maximize state management
+// Helper functions for maximize state management.
 int find_vmaximize_window(Window window) {
 	for (int i = 0; i < vmaximize_count; i++) {
 		if (vmaximize_windows[i].window == window) {
@@ -134,7 +135,6 @@ int find_hmaximize_window(Window window) {
 void remove_vmaximize_window(Window window) {
 	int index = find_vmaximize_window(window);
 	if (index >= 0) {
-		// Shift remaining elements left
 		for (int i = index; i < vmaximize_count - 1; i++) {
 			vmaximize_windows[i] = vmaximize_windows[i + 1];
 		}
@@ -145,7 +145,6 @@ void remove_vmaximize_window(Window window) {
 void remove_hmaximize_window(Window window) {
 	int index = find_hmaximize_window(window);
 	if (index >= 0) {
-		// Shift remaining elements left
 		for (int i = index; i < hmaximize_count - 1; i++) {
 			hmaximize_windows[i] = hmaximize_windows[i + 1];
 		}
@@ -156,13 +155,25 @@ void remove_hmaximize_window(Window window) {
 void update_borders(Window new_active) {
 	if (active_window != None && active_window != new_active) {
 		if (window_exists(active_window)) {
-			XSetWindowBorder(dpy, active_window, inactive_border);
+			unsigned long border_color;
+			if (get_window_desktop(active_window) == 0) {
+				border_color = sticky_inactive_border;
+			} else {
+				border_color = inactive_border;
+			}
+			XSetWindowBorder(dpy, active_window, border_color);
 		}
 	}
 
 	if (new_active != None) {
 		if (window_exists(new_active)) {
-			XSetWindowBorder(dpy, new_active, active_border);
+			unsigned long border_color;
+			if (get_window_desktop(new_active) == 0) {
+				border_color = sticky_active_border;
+			} else {
+				border_color = active_border;
+			}
+			XSetWindowBorder(dpy, new_active, border_color);
 		} else {
 			new_active = None;
 		}
@@ -265,7 +276,6 @@ void switch_desktop(unsigned long desktop) {
 
 	current_desktop = desktop;
 
-	// Update the root window property.
 	unsigned long value = desktop;
 	XChangeProperty(dpy, root, _NET_CURRENT_DESKTOP, XA_CARDINAL, 32, PropModeReplace, (unsigned char *)&value, 1);
 
@@ -274,7 +284,6 @@ void switch_desktop(unsigned long desktop) {
 	unsigned long nitems, bytes_after;
 	unsigned char *data = NULL;
 
-	// Get list of client windows.
 	Window first_window_on_desktop = None;
 	if (XGetWindowProperty(dpy, root, _NET_CLIENT_LIST, 0, 1024, False, XA_WINDOW, &type, &format, &nitems, &bytes_after, &data) == Success) {
 		if (type == XA_WINDOW && format == 32) {
@@ -291,11 +300,10 @@ void switch_desktop(unsigned long desktop) {
 				unsigned long window_desktop = get_window_desktop(w);
 				log_message(stdout, LOG_DEBUG, "Processing window 0x%lx on desktop %lu (current: %lu)", w, window_desktop, current_desktop);
 
-				if (window_desktop == current_desktop) {
-					log_message(stdout, LOG_DEBUG, "Mapping window 0x%lx", w);
+				if (window_desktop == 0 || window_desktop == current_desktop) {
+					log_message(stdout, LOG_DEBUG, "Mapping window 0x%lx (desktop %lu)", w, window_desktop);
 					XMapWindow(dpy, w);
-					// Remember the first window on this desktop for activation
-					if (first_window_on_desktop == None) {
+					if (first_window_on_desktop == None && window_desktop != 0) {
 						first_window_on_desktop = w;
 					}
 				} else {
@@ -309,16 +317,21 @@ void switch_desktop(unsigned long desktop) {
 		if (data) XFree(data);
 	}
 
-	// Clear the old active window
 	if (active_window != None) {
 		if (window_exists(active_window)) {
-			XSetWindowBorder(dpy, active_window, inactive_border);
+			unsigned long border_color;
+			if (get_window_desktop(active_window) == 0) {
+				border_color = sticky_inactive_border;
+			} else {
+				border_color = inactive_border;
+			}
+			XSetWindowBorder(dpy, active_window, border_color);
 		}
 		active_window = None;
 		set_active_window_property(active_window);
 	}
 
-	// Activate the first window on the new desktop
+	// Activate the first window on the new desktop.
 	if (first_window_on_desktop != None) {
 		XRaiseWindow(dpy, first_window_on_desktop);
 		XSetInputFocus(dpy, first_window_on_desktop, RevertToPointerRoot, CurrentTime);
@@ -417,7 +430,6 @@ static int is_fullscreen(Window window) {
 
 static void set_fullscreen(Window window, int fullscreen) {
 	if (fullscreen) {
-		// Store current window geometry
 		XWindowAttributes attr;
 		XGetWindowAttributes(dpy, window, &attr);
 		fullscreen_x = attr.x;
@@ -425,21 +437,17 @@ static void set_fullscreen(Window window, int fullscreen) {
 		fullscreen_width = attr.width;
 		fullscreen_height = attr.height;
 
-		// Remove border and move to fullscreen
 		XSetWindowBorderWidth(dpy, window, 0);
 		XMoveResizeWindow(dpy, window, 0, 0, DisplayWidth(dpy, screen), DisplayHeight(dpy, screen));
 
-		// Set fullscreen state
 		XChangeProperty(dpy, window, _NET_WM_STATE, XA_ATOM, 32, PropModeReplace, (unsigned char *)&_NET_WM_STATE_FULLSCREEN, 1);
 		fullscreen_window = window;
 
 		log_message(stdout, LOG_DEBUG, "Window 0x%lx set to fullscreen", window);
 	} else {
-		// Restore window geometry
 		XSetWindowBorderWidth(dpy, window, border_size);
 		XMoveResizeWindow(dpy, window, fullscreen_x, fullscreen_y, fullscreen_width, fullscreen_height);
 
-		// Remove fullscreen state
 		XDeleteProperty(dpy, window, _NET_WM_STATE);
 		fullscreen_window = None;
 
@@ -462,7 +470,6 @@ static void toggle_fullscreen(Window window) {
 	}
 }
 
-
 int main(void) {
 	set_log_level(get_log_level_from_env());
 
@@ -480,7 +487,6 @@ int main(void) {
 	cursor_move = XCreateFontCursor(dpy, XC_fleur);
 	cursor_resize  = XCreateFontCursor(dpy, XC_sizing);
 
-	// Set default cursor for root.
 	XDefineCursor(dpy, root, cursor_default);
 
 	// Set fonts and visual stuff.
@@ -535,9 +541,11 @@ int main(void) {
 
 	// Prepare border colors.
 	Colormap cmap = DefaultColormap(dpy, screen);
-	XColor active_color, inactive_color, dummy;
+	XColor active_color, inactive_color, sticky_active_color, sticky_inactive_color, dummy;
 	active_border= BlackPixel(dpy, screen);
 	inactive_border= BlackPixel(dpy, screen);
+	sticky_active_border = BlackPixel(dpy, screen);
+	sticky_inactive_border = BlackPixel(dpy, screen);
 
 	if (XAllocNamedColor(dpy, cmap, active_border_color, &active_color, &dummy)) {
 		active_border = active_color.pixel;
@@ -545,6 +553,14 @@ int main(void) {
 
 	if (XAllocNamedColor(dpy, cmap, inactive_border_color, &inactive_color, &dummy)) {
 		inactive_border = inactive_color.pixel;
+	}
+
+	if (XAllocNamedColor(dpy, cmap, sticky_active_border_color, &sticky_active_color, &dummy)) {
+		sticky_active_border = sticky_active_color.pixel;
+	}
+
+	if (XAllocNamedColor(dpy, cmap, sticky_inactive_border_color, &sticky_inactive_color, &dummy)) {
+		sticky_inactive_border = sticky_inactive_color.pixel;
 	}
 
 	// Root window input selection masks.
@@ -600,14 +616,24 @@ int main(void) {
 					XMapWindow(dpy, window);
 					log_message(stdout, LOG_DEBUG, "Window 0x%lx mapped", window);
 
-					// Make the new window active and focused
+					// Make the new window active and focused.
 					XRaiseWindow(dpy, window);
 					XSetInputFocus(dpy, window, RevertToPointerRoot, CurrentTime);
 					update_borders(window);
 					log_message(stdout, LOG_DEBUG, "Window 0x%lx raised and focused", window);
 
+
 					add_to_client_list(window);
 					set_window_desktop(window, current_desktop);
+
+					// Update border color based on desktop (sticky windows get violet border).
+					unsigned long border_color;
+					if (get_window_desktop(window) == 0) {
+						border_color = sticky_active_border;
+					} else {
+						border_color = active_border;
+					}
+					XSetWindowBorder(dpy, window, border_color);
 				} break;
 
 			case DestroyNotify:
@@ -622,10 +648,10 @@ int main(void) {
 						log_message(stdout, LOG_DEBUG, "Fullscreen window 0x%lx destroyed", ev.xdestroywindow.window);
 					}
 
-					// Remove from vertical maximize tracking
+					// Remove from vertical maximize tracking.
 					for (int i = 0; i < vmaximize_count; i++) {
 						if (vmaximize_windows[i].window == ev.xdestroywindow.window) {
-							// Shift remaining elements left
+							// Shift remaining elements left.
 							for (int j = i; j < vmaximize_count - 1; j++) {
 								vmaximize_windows[j] = vmaximize_windows[j + 1];
 							}
@@ -635,10 +661,10 @@ int main(void) {
 						}
 					}
 
-					// Remove from horizontal maximize tracking
+					// Remove from horizontal maximize tracking.
 					for (int i = 0; i < hmaximize_count; i++) {
 						if (hmaximize_windows[i].window == ev.xdestroywindow.window) {
-							// Shift remaining elements left
+							// Shift remaining elements left.
 							for (int j = i; j < hmaximize_count - 1; j++) {
 								hmaximize_windows[j] = hmaximize_windows[j + 1];
 							}
@@ -655,7 +681,6 @@ int main(void) {
 				{
 					log_message(stdout, LOG_DEBUG, "Window 0x%lx unmapped", ev.xunmap.window);
 				} break;
-
 
 			case FocusIn:
 				{
@@ -714,12 +739,12 @@ int main(void) {
 							XGetWindowAttributes(dpy, ev.xbutton.subwindow, &attr);
 							start = ev.xbutton;
 
-							// Raise and focus the window
+							// Raise and focus the window.
 							XRaiseWindow(dpy, ev.xbutton.subwindow);
 							XSetInputFocus(dpy, ev.xbutton.subwindow, RevertToPointerRoot, CurrentTime);
 							update_borders(ev.xbutton.subwindow);
 
-							// Set appropriate cursor for dragging
+							// Set appropriate cursor for dragging.
 							if (start.button == 1) {
 								log_message(stdout, LOG_DEBUG, "Setting cursor to move");
 								XDefineCursor(dpy, start.subwindow, cursor_move);
@@ -736,7 +761,7 @@ int main(void) {
 			case ButtonRelease:
 				{
 					if (start.subwindow != None) {
-						// MODKEY drag release: restore cursor
+						// MODKEY drag release: restore cursor.
 						if (start.state & MODKEY) {
 							XDefineCursor(dpy, start.subwindow, None);
 						}
@@ -777,7 +802,7 @@ int main(void) {
 					} else if (ev.xclient.message_type == _NET_ACTIVE_WINDOW) {
 						Window window = ev.xclient.data.l[0];
 						if (window != None && window_exists(window)) {
-							// Check if window is on current desktop
+							// Check if window is on current desktop.
 							unsigned long window_desktop = get_window_desktop(window);
 							if (window_desktop == current_desktop) {
 								XRaiseWindow(dpy, window);
@@ -785,7 +810,7 @@ int main(void) {
 								update_borders(window);
 								log_message(stdout, LOG_DEBUG, "Activated window 0x%lx via _NET_ACTIVE_WINDOW", window);
 							} else {
-								// Switch to the window's desktop first
+								// Switch to the window's desktop first.
 								switch_desktop(window_desktop);
 								XRaiseWindow(dpy, window);
 								XSetInputFocus(dpy, window, RevertToPointerRoot, CurrentTime);

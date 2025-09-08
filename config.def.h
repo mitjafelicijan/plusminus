@@ -8,6 +8,8 @@ static const char *font_name = "Berkeley Mono:style=Bold:pixelsize=16:antialias=
 static int border_size = 3;
 static const char *active_border_color = "khaki";
 static const char *inactive_border_color = "darkgray";
+static const char *sticky_active_border_color = "violet";
+static const char *sticky_inactive_border_color = "cyan";
 static const char *time_format = "%A %d.%m.%Y %H:%M:%S";
 static bool follow_focus = false;
 
@@ -55,4 +57,5 @@ static Keybinds keybinds[] = {
 	{ MODKEY | ControlMask, XK_Right,   window_snap_right,   { 0 }        },
 	{ MODKEY | ControlMask, XK_Left,    window_snap_left,    { 0 }        },
 	{ MODKEY,               XK_q,       kill_window,         { 0 }        },
+	{ MODKEY,               XK_s,       sticky,              { 0 }        },
 };

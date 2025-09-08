@@ -45,10 +45,13 @@ void log_message(FILE *stream, LogLevel level, const char* format, ...);
 extern Display *dpy;
 extern Window active_window;
 extern unsigned long number_of_desktops;
+extern unsigned long current_desktop;
 extern unsigned long active_border;
 extern unsigned long inactive_border;
+extern unsigned long sticky_active_border;
+extern unsigned long sticky_inactive_border;
 
-// Maximize state tracking
+// Maximize state tracking.
 #define MAX_MAXIMIZE_WINDOWS 32
 
 typedef struct {
@@ -88,11 +91,12 @@ void window_snap_up(const Arg *arg);
 void window_snap_down(const Arg *arg);
 void window_snap_right(const Arg *arg);
 void window_snap_left(const Arg *arg);
+void sticky(const Arg *arg);
 
-// Helper functions for maximize state management
+// Helper functions for maximize state management.
 int find_vmaximize_window(Window window);
 int find_hmaximize_window(Window window);
 void remove_vmaximize_window(Window window);
 void remove_hmaximize_window(Window window);
 
-#endif // PLUSMINUS_H
+#endif // PLUSMINUS_H.

@@ -7,7 +7,7 @@ PlusMinus is a minimal X11 window manager that provides essential window managem
 - **Window Movement**: Precise pixel-by-pixel window positioning
 - **Window Resizing**: Incremental resizing with minimum size constraints
 - **Desktop Management**: Multi-desktop support with window movement between desktops
-- **Window Control**: Force kill and fullscreen toggle capabilities
+- **Window Control**: Force kill, fullscreen toggle, and sticky window capabilities
 - **Smart Maximization**: Separate vertical and horizontal maximization with state tracking
 - **Edge Snapping**: Quick window positioning to screen edges
 - **Comprehensive Logging**: Debug logging for all operations
@@ -207,6 +207,7 @@ The configuration uses two main arrays:
 ```c
 { MODKEY,               XK_f,       fullscreen,          { 0 } },         // Toggle fullscreen
 { MODKEY,               XK_q,       kill_window,         { 0 } },         // Kill window
+{ MODKEY,               XK_s,       sticky,              { 0 } },         // Toggle sticky (always-on-top)
 ```
 
 #### Window Maximization

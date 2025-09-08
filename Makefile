@@ -6,11 +6,11 @@ DESTDIR      ?= /usr/local
 DISPLAY_NUM  := 69
 
 ifdef DEBUG
-CFLAGS += -ggdb -DDEBUG
+	CFLAGS += -ggdb -DDEBUG
 endif
 
 ifdef OPTIMIZE
-CFLAGS += -O$(OPTIMIZE)
+	CFLAGS += -O$(OPTIMIZE)
 endif
 
 all: config.h plusminus
