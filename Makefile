@@ -24,5 +24,8 @@ config.h:
 install: all
 	install -Dm755 plusminus $(DESTDIR)/usr/local/bin/plusminus
 
+clean:
+	rm -f plusminus config.h
+
 virt:
 	Xephyr -screen 1500x1500 :$(DISPLAY_NUM)
