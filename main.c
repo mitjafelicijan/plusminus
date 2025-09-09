@@ -1,3 +1,13 @@
+// FIXME: When PIP window is pulled back into the main program the stick window
+//        still persists.
+// FIXME: Some of the windows/modals that open are 1x1px.
+// TODO:  Refactor some of the stuff in main.c into separate file.
+// TODO:  Add a CPU/memory widget to status bar.
+// TODO:  Add a pulseaudio widget to the status bar.
+// TODO:  Check for additional hints that can be used.
+//        https://specifications.freedesktop.org/wm-spec/latest/.
+// TODO:  Add alt+tab (windows) and mod+tab (desktops).
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
