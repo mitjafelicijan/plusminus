@@ -659,6 +659,7 @@ int main(void) {
 					}
 
 					// Remove from vertical maximize tracking.
+					// TODO: Convert this to linked list.
 					for (int i = 0; i < vmaximize_count; i++) {
 						if (vmaximize_windows[i].window == ev.xdestroywindow.window) {
 							// Shift remaining elements left.
@@ -672,6 +673,7 @@ int main(void) {
 					}
 
 					// Remove from horizontal maximize tracking.
+					// TODO: Convert this to linked list.
 					for (int i = 0; i < hmaximize_count; i++) {
 						if (hmaximize_windows[i].window == ev.xdestroywindow.window) {
 							// Shift remaining elements left.
